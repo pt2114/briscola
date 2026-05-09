@@ -72,6 +72,7 @@ const SID_CHANTS = [
   'Italian Stallion!',
   'Djemba Djemba!',
   "In the land of Uncle Sid’s!",
+  'Mr. Freeze!',
 ];
 
 function displayName(name) {
@@ -96,6 +97,7 @@ function useSpecialStinger() {
     if (title === 'Pablo El Diablo!') return '/pablo-el-diablo.jpg';
     if (title === 'Djemba Djemba!') return '/djemba-djemba.jpg';
     if (title === "In the land of Uncle Sid’s!") return '/uncle-sids.jpg';
+    if (title === 'Mr. Freeze!') return '/mr-freeze.jpg';
     return null;
   }
 
