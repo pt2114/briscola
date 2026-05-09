@@ -71,6 +71,7 @@ const PAVEL_CHANTS = [
 const SID_CHANTS = [
   'Italian Stallion!',
   'Djemba Djemba!',
+  "In the land of Uncle Sid’s!",
 ];
 
 function displayName(name) {
@@ -94,6 +95,7 @@ function useSpecialStinger() {
     if (title === 'ACE OF SPADES') return '/ace-of-spades-pavel.jpg';
     if (title === 'Pablo El Diablo!') return '/pablo-el-diablo.jpg';
     if (title === 'Djemba Djemba!') return '/djemba-djemba.jpg';
+    if (title === "In the land of Uncle Sid’s!") return '/uncle-sids.jpg';
     return null;
   }
 
