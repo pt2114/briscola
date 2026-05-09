@@ -95,6 +95,7 @@ function useSpecialStinger() {
   function stingerImage(title) {
     if (title === 'ACE OF SPADES') return '/ace-of-spades-pavel.jpg';
     if (title === 'Pablo El Diablo!') return '/pablo-el-diablo.jpg';
+    if (title === 'Italian Stallion!') return '/italian-stallion.jpg';
     if (title === 'Djemba Djemba!') return '/djemba-djemba.jpg';
     if (title === "In the land of Uncle Sid’s!") return '/uncle-sids.jpg';
     if (title === 'Mr. Freeze!') return '/mr-freeze.jpg';
