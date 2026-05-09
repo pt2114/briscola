@@ -90,8 +90,14 @@ function useSpecialStinger() {
   const [stinger, setStinger] = useState(null);
   const seen = useRef(new Set());
 
+  function stingerImage(title) {
+    if (title === 'ACE OF SPADES') return '/ace-of-spades-pavel.jpg';
+    if (title === 'Pablo El Diablo!') return '/pablo-el-diablo.jpg';
+    return null;
+  }
+
   function flash(title, subtitle = '', flavor = 'neutral', duration = 1000) {
-    setStinger({ title, subtitle, flavor });
+    setStinger({ title, subtitle, flavor, image: stingerImage(title) });
     setTimeout(() => setStinger(null), duration);
   }
 
@@ -194,7 +200,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
 
   return <main className="game-shell">
     <ScoreBoard game={game} />
-    {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.title === 'ACE OF SPADES' ? 'photo-stinger' : ''}`}>{specialStinger.stinger.title === 'ACE OF SPADES' && <img src="/ace-of-spades-pavel.jpg" alt="Ace of Spades" />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
+    {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
       <div className="player top">
         <PlayerBadge name={game.players[topIndex]} turn={game.turn === topIndex} />
