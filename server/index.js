@@ -52,7 +52,12 @@ io.on('connection', (socket) => {
     const room = socket.data.room; const r = rooms.get(room); if (!r?.game) return;
     const idx = r.players.findIndex(p => p.socketId === socket.id); if (idx < 0) return;
     playCard(r.game, idx, cardId); emitRoom(room);
-    if (r.game.pendingTrick) setTimeout(() => { collectTrick(r.game); emitRoom(room); }, 1600);
+    if (r.game.pendingTrick) {
+      const hasAceOfSpades = r.game.pendingTrick.cards.some((p) => p.card.id === 'A-spades');
+      const hasBigScore = r.game.pendingTrick.points > 14;
+      const collectDelay = hasBigScore ? 3800 : hasAceOfSpades ? 2200 : 1600;
+      setTimeout(() => { collectTrick(r.game); emitRoom(room); }, collectDelay);
+    }
   });
   socket.on('newGame', () => { const room = socket.data.room; const r = rooms.get(room); if (r?.players.length === 2) { r.game = newGame(r.players.map(p => p.name)); emitRoom(room); } });
   socket.on('disconnect', () => { if (socket.data.room) emitRoom(socket.data.room); });

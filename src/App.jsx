@@ -91,6 +91,7 @@ function PlayerBadge({ name, turn }) {
 function useSpecialStinger() {
   const [stinger, setStinger] = useState(null);
   const seen = useRef(new Set());
+  const clearTimer = useRef(null);
 
   function stingerImage(title) {
     if (title === 'ACE OF SPADES') return '/ace-of-spades-pavel.jpg';
@@ -103,20 +104,21 @@ function useSpecialStinger() {
   }
 
   function flash(title, subtitle = '', flavor = 'neutral', duration = 1000) {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
     setStinger({ title, subtitle, flavor, image: stingerImage(title) });
     if (title === 'ACE OF SPADES') {
       const audio = new Audio('/audio/ace-of-spades-chant.m4a');
       audio.volume = 1;
       audio.play().catch(() => {});
     }
-    setTimeout(() => setStinger(null), duration);
+    clearTimer.current = setTimeout(() => setStinger(null), duration);
   }
 
   function bigScoreLine(playerName, points) {
     const isSid = String(playerName || '').toLowerCase().includes('sid');
     const lines = isSid ? SID_CHANTS : PAVEL_CHANTS;
     const line = lines[Math.floor(Math.random() * lines.length)];
-    flash(line, `${points} point trick`, isSid ? 'sid' : 'pavel', 1800);
+    flash(line, `${points} point trick`, isSid ? 'sid' : 'pavel', 3600);
   }
 
   function watch(game) {
@@ -124,7 +126,7 @@ function useSpecialStinger() {
       const key = `ace-${play.card.id}-${play.playerIndex}`;
       if (play.card.id === 'A-spades' && !seen.current.has(key)) {
         seen.current.add(key);
-        flash('ACE OF SPADES', '', 'neutral', 1000);
+        flash('ACE OF SPADES', '', 'neutral', 2000);
       }
     }
 
@@ -164,7 +166,7 @@ function ScoreBoard({ game }) {
 
 function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0 }) {
   const isMyTurn = game.turn === myIndex && !game.winner && !game.pendingTrick;
-  const canPlay = (playerIndex) => mode !== 'multi' ? playerIndex === 0 && isMyTurn : playerIndex === myIndex && isMyTurn;
+  const canPlay = (playerIndex) => !isStingerOpen && (mode !== 'multi' ? playerIndex === 0 && isMyTurn : playerIndex === myIndex && isMyTurn);
 
   function play(cardId) {
     playSfx('card', soundEnabled);
@@ -173,27 +175,28 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
   }
 
   useEffect(() => {
-    if (mode !== 'single' || game.winner || game.turn !== 1 || game.pendingTrick) return;
+    if (mode !== 'single' || isStingerOpen || game.winner || game.turn !== 1 || game.pendingTrick) return;
     const t = setTimeout(() => {
       playSfx('card', soundEnabled);
       setGame((g) => playCard(g, 1, chooseBotCard(g, 1, difficulty)));
     }, 900);
     return () => clearTimeout(t);
-  }, [game, mode, setGame, soundEnabled, difficulty]);
+  }, [game, mode, setGame, soundEnabled, difficulty, isStingerOpen]);
 
   useEffect(() => {
-    if (mode !== 'single' || !game.pendingTrick) return;
+    if (mode !== 'single' || isStingerOpen || !game.pendingTrick) return;
     const t = setTimeout(() => {
       playSfx('take', soundEnabled);
       setGame((g) => collectTrick(g));
     }, 1600);
     return () => clearTimeout(t);
-  }, [game.pendingTrick, mode, setGame, soundEnabled]);
+  }, [game.pendingTrick, mode, setGame, soundEnabled, isStingerOpen]);
 
   const topIndex = mode === 'multi' ? 1 - myIndex : 1;
   const bottomIndex = myIndex;
 
   const specialStinger = useSpecialStinger();
+  const isStingerOpen = Boolean(specialStinger.stinger);
 
   const prevTableCount = useRef(game.table?.length || 0);
   const prevPending = useRef(Boolean(game.pendingTrick));
@@ -225,7 +228,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
         </div>
         {game.winner ? <div className="winner"><span>Partita finita</span><b>{game.winner}</b></div> : <>
           <div className="turn-banner">{game.pendingTrick ? `${game.players[game.pendingTrick.wonBy]} takes ${game.pendingTrick.points}` : `${game.players[game.turn]} plays ${game.table.length ? 'second' : 'first'}`}</div>
-          <div className={`played-cards ${game.pendingTrick ? 'collecting' : ''} ${game.pendingTrick?.wonBy === topIndex ? 'collect-top' : ''} ${game.pendingTrick?.wonBy === bottomIndex ? 'collect-bottom' : ''}`}>
+          <div className={`played-cards ${game.pendingTrick && !isStingerOpen ? 'collecting' : ''} ${game.pendingTrick?.wonBy === topIndex ? 'collect-top' : ''} ${game.pendingTrick?.wonBy === bottomIndex ? 'collect-bottom' : ''}`}>
             {game.table.map((p, i) => (
               <div
                 className={`played ${p.playerIndex === bottomIndex ? 'from-bottom' : 'from-top'} ${i === 1 ? 'second-card' : 'first-card'}`}
