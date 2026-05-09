@@ -93,6 +93,7 @@ function useSpecialStinger() {
   function stingerImage(title) {
     if (title === 'ACE OF SPADES') return '/ace-of-spades-pavel.jpg';
     if (title === 'Pablo El Diablo!') return '/pablo-el-diablo.jpg';
+    if (title === 'Djemba Djemba!') return '/djemba-djemba.jpg';
     return null;
   }
 
