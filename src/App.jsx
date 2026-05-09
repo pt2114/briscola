@@ -256,8 +256,9 @@ function Lobby({ onSingle, onMulti }) {
       <p className="eyebrow">Casa di carte</p>
       <h1>Pavel & Sid’s Briscola</h1>
       <p>Two-player Briscola with American cards, Italian soul, and just enough drama for a Sunday table.</p>
-      <div className="lobby-actions">
-        <button onClick={onSingle}>Play vs Computer</button>
+      <div className="lobby-actions single-actions">
+        <button onClick={() => onSingle('pavel')}>Play as Pavel vs Computer</button>
+        <button onClick={() => onSingle('sid')}>Play as Sid vs Pavel Computer</button>
       </div>
       <div className="login-card">
         <h2>Multiplayer login</h2>
@@ -296,7 +297,7 @@ function App() {
   return <>
     <div className="app-header"><button onClick={() => setMode('lobby')}>‹ Menu</button><div><strong>Pavel & Sid’s</strong><span>Briscola</span></div><button className="settings-button" onClick={() => setSettingsOpen(true)}>⚙︎</button></div>
     {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-grabber" /><h2>Settings</h2><label className="setting-row"><span>Show point values</span><input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} /></label><label className="setting-row"><span>Sound effects</span><input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} /></label><div className="setting-block"><span>Computer difficulty</span><div className="difficulty-grid">{[['easy','Easy'],['medium','Medium'],['hard','Hard'],['extra-hard','Extra Hard']].map(([value,label]) => <button key={value} className={difficulty === value ? 'selected' : ''} onClick={() => setDifficulty(value)}>{label}</button>)}</div></div><button className="done-button" onClick={() => setSettingsOpen(false)}>Done</button></section></div>}
-    {mode === 'lobby' && <Lobby onSingle={() => { setSingleGame(newGame(['Pavel', 'Computer'])); setMode('single'); }} onMulti={(name, room) => { setLogin({ name, room }); setMode('multi'); }} />}
+    {mode === 'lobby' && <Lobby onSingle={(player) => { setSingleGame(player === 'sid' ? newGame(['Sid', 'Pavel Computer']) : newGame(['Pavel', 'Sid Computer'])); setMode('single'); }} onMulti={(name, room) => { setLogin({ name, room }); setMode('multi'); }} />}
     {mode === 'single' && <><GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} difficulty={difficulty} /><button className="floating" onClick={() => setSingleGame(newGame(['Pavel', 'Computer']))}>New game</button></>}
     {mode === 'multi' && <Multiplayer name={login.name} room={login.room} showPoints={showPoints} soundEnabled={soundEnabled} />}
   </>;
