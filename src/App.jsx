@@ -108,6 +108,9 @@ function useSpecialStinger() {
   function stingerAudio(title) {
     if (title === 'ACE OF SPADES') return '/audio/ace-of-spades-chant.m4a';
     if (title === 'Pablo El Diablo!') return '/audio/catchphrases/pablo-el-diablo.m4a';
+    if (title === 'Pavel superstar!') return '/audio/catchphrases/pavel-superstar.m4a';
+    if (title === 'Pavel rock and roll!') return '/audio/catchphrases/pavel-rock-and-roll.m4a';
+    if (title === 'Pavel the navel takes the table!') return '/audio/catchphrases/pavel-navel-table.m4a';
     if (title === 'Italian Stallion!') return '/audio/catchphrases/italian-stallion.m4a';
     if (title === 'Djemba Djemba!') return '/audio/catchphrases/djemba-djemba.m4a';
     if (title === "In the land of Uncle Sid’s!") return '/audio/catchphrases/uncle-sids.m4a';
