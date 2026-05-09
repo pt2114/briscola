@@ -109,6 +109,9 @@ function useSpecialStinger() {
     if (title === 'ACE OF SPADES') return '/audio/ace-of-spades-chant.m4a';
     if (title === 'Pablo El Diablo!') return '/audio/catchphrases/pablo-el-diablo.m4a';
     if (title === 'Italian Stallion!') return '/audio/catchphrases/italian-stallion.m4a';
+    if (title === 'Djemba Djemba!') return '/audio/catchphrases/djemba-djemba.m4a';
+    if (title === "In the land of Uncle Sid’s!") return '/audio/catchphrases/uncle-sids.m4a';
+    if (title === 'Mr. Freeze!') return '/audio/catchphrases/mr-freeze.m4a';
     if (title === 'Casanova!') return '/audio/catchphrases/casanova.m4a';
     if (title === 'Big Cock Alert!') return '/audio/catchphrases/big-cock-alert.m4a';
     return null;
