@@ -194,7 +194,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
 
   return <main className="game-shell">
     <ScoreBoard game={game} />
-    {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor}`}><b>{specialStinger.stinger.title}</b><span>{specialStinger.stinger.subtitle}</span></div>}
+    {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.title === 'ACE OF SPADES' ? 'photo-stinger' : ''}`}>{specialStinger.stinger.title === 'ACE OF SPADES' && <img src="/ace-of-spades-pavel.jpg" alt="Ace of Spades" />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
       <div className="player top">
         <PlayerBadge name={game.players[topIndex]} turn={game.turn === topIndex} />
