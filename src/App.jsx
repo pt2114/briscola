@@ -104,6 +104,11 @@ function useSpecialStinger() {
 
   function flash(title, subtitle = '', flavor = 'neutral', duration = 1000) {
     setStinger({ title, subtitle, flavor, image: stingerImage(title) });
+    if (title === 'ACE OF SPADES') {
+      const audio = new Audio('/audio/ace-of-spades-chant.m4a');
+      audio.volume = 1;
+      audio.play().catch(() => {});
+    }
     setTimeout(() => setStinger(null), duration);
   }
 
