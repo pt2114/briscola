@@ -244,7 +244,7 @@ function ScoreBoard({ game, record }) {
   </aside>;
 }
 
-function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0 }) {
+function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0, onNewGame }) {
   const specialStinger = useSpecialStinger();
   const localRecord = useLocalHeadToHead(game);
   const record = mode === 'multi' ? (game.record || localRecord) : localRecord;
@@ -295,7 +295,10 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
 
   return <main className="game-shell">
     <ScoreBoard game={game} record={record} />
-    {!game.winner && <button className="reaction-button stacked-reaction" onClick={specialStinger.stackedReaction}>Stacked</button>}
+    <div className="table-actions">
+      <button className="stacked-reaction" onClick={specialStinger.stackedReaction}>Stacked</button>
+      {onNewGame && <button onClick={onNewGame}>New game</button>}
+    </div>
     {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 36 }, (_, i) => <i key={i} style={{ left: `${(i * 29) % 100}%`, animationDelay: `${(i % 9) * 0.06}s`, transform: `rotate(${i * 17}deg)` }} />)}</div>}
     {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
@@ -369,7 +372,7 @@ function Multiplayer({ name, room, showPoints, soundEnabled }) {
   }, [socket, name, room]);
   if (error) return <div className="center-card">{error}</div>;
   if (!state || state.waiting) return <div className="center-card"><h2>Waiting in room {room.toUpperCase()}</h2><p>Have the other player join as Pavel or Sid.</p></div>;
-  return <><GameTable game={state} mode="multi" socket={socket} showPoints={showPoints} soundEnabled={soundEnabled} myIndex={state.me} /><button className="floating" onClick={() => socket.emit('newGame')}>New game</button></>;
+  return <GameTable game={state} mode="multi" socket={socket} showPoints={showPoints} soundEnabled={soundEnabled} myIndex={state.me} onNewGame={() => socket.emit('newGame')} />;
 }
 
 function App() {
@@ -384,7 +387,7 @@ function App() {
     <div className="app-header"><button onClick={() => setMode('lobby')}>‹ Menu</button><div><strong>Pavel & Sid’s</strong><span>Briscola</span></div><button className="settings-button" onClick={() => setSettingsOpen(true)}>⚙︎</button></div>
     {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-grabber" /><h2>Settings</h2><label className="setting-row"><span>Show point values</span><input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} /></label><label className="setting-row"><span>Sound effects</span><input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} /></label><div className="setting-block"><span>Computer difficulty</span><div className="difficulty-grid">{[['easy','Easy'],['medium','Medium'],['hard','Hard'],['extra-hard','Extra Hard']].map(([value,label]) => <button key={value} className={difficulty === value ? 'selected' : ''} onClick={() => setDifficulty(value)}>{label}</button>)}</div></div><button className="done-button" onClick={() => setSettingsOpen(false)}>Done</button></section></div>}
     {mode === 'lobby' && <Lobby onSingle={(player) => { setSingleGame(player === 'sid' ? newGame(['Sid', 'Pavel Computer']) : newGame(['Pavel', 'Sid Computer'])); setMode('single'); }} onMulti={(name, room) => { setLogin({ name, room }); setMode('multi'); }} />}
-    {mode === 'single' && <><GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} difficulty={difficulty} /><button className="floating" onClick={() => setSingleGame((game) => newGame(game.players))}>New game</button></>}
+    {mode === 'single' && <GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} difficulty={difficulty} onNewGame={() => setSingleGame((game) => newGame(game.players))} />}
     {mode === 'multi' && <Multiplayer name={login.name} room={login.room} showPoints={showPoints} soundEnabled={soundEnabled} />}
   </>;
 }
