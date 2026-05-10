@@ -190,6 +190,10 @@ function useSpecialStinger() {
     flash(line, `${points} point trick`, isSid ? 'sid' : 'pavel', 3600);
   }
 
+  function stackedReaction() {
+    flash('He’s stacked!!!', '', 'stacked', 1800);
+  }
+
   function watch(game) {
     if (game.id && game.id !== currentGameId.current) {
       currentGameId.current = game.id;
@@ -213,7 +217,7 @@ function useSpecialStinger() {
     }
   }
 
-  return { stinger, watch };
+  return { stinger, watch, stackedReaction };
 }
 
 function Card({ card, onClick, disabled, showPoints, small }) {
@@ -291,6 +295,8 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
 
   return <main className="game-shell">
     <ScoreBoard game={game} record={record} />
+    {!game.winner && <button className="reaction-button stacked-reaction" onClick={specialStinger.stackedReaction}>Stacked</button>}
+    {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 36 }, (_, i) => <i key={i} style={{ left: `${(i * 29) % 100}%`, animationDelay: `${(i % 9) * 0.06}s`, transform: `rotate(${i * 17}deg)` }} />)}</div>}
     {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
       <div className="player top">
@@ -337,8 +343,8 @@ function Lobby({ onSingle, onMulti }) {
       <h1>Pavel & Sid’s Briscola</h1>
       <p>Two-player Briscola with American cards, Italian soul, and just enough drama for a Sunday table.</p>
       <div className="lobby-actions single-actions">
-        <button onClick={() => onSingle('pavel')}>Play as Pavel vs Computer</button>
-        <button onClick={() => onSingle('sid')}>Play as Sid vs Pavel Computer</button>
+        <button onClick={() => onSingle('pavel')}>Play as Pavel against Sid AI</button>
+        <button onClick={() => onSingle('sid')}>Play as Sid against Pavel AI</button>
       </div>
       <div className="login-card">
         <h2>Multiplayer login</h2>
