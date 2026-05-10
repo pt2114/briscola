@@ -329,7 +329,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
 
 function Lobby({ onSingle, onMulti }) {
   const [name, setName] = useState('Pavel');
-  const [room, setRoom] = useState('ROMA');
+  const [room, setRoom] = useState('MILAN');
   return <div className="lobby">
     <div className="poster">
       <div className="crest">♣</div>
@@ -373,7 +373,7 @@ function App() {
   const [difficulty, setDifficulty] = useState('hard');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [singleGame, setSingleGame] = useState(() => newGame(['Pavel', 'Computer']));
-  const [login, setLogin] = useState({ name: 'Pavel', room: 'ROMA' });
+  const [login, setLogin] = useState({ name: 'Pavel', room: 'MILAN' });
   return <>
     <div className="app-header"><button onClick={() => setMode('lobby')}>‹ Menu</button><div><strong>Pavel & Sid’s</strong><span>Briscola</span></div><button className="settings-button" onClick={() => setSettingsOpen(true)}>⚙︎</button></div>
     {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-grabber" /><h2>Settings</h2><label className="setting-row"><span>Show point values</span><input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} /></label><label className="setting-row"><span>Sound effects</span><input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} /></label><div className="setting-block"><span>Computer difficulty</span><div className="difficulty-grid">{[['easy','Easy'],['medium','Medium'],['hard','Hard'],['extra-hard','Extra Hard']].map(([value,label]) => <button key={value} className={difficulty === value ? 'selected' : ''} onClick={() => setDifficulty(value)}>{label}</button>)}</div></div><button className="done-button" onClick={() => setSettingsOpen(false)}>Done</button></section></div>}

@@ -46,7 +46,7 @@ function emitRoom(room) { const r = rooms.get(room); if (!r) return; for (const 
 
 io.on('connection', (socket) => {
   socket.on('join', ({ room, name }) => {
-    room = String(room || 'ROMA').trim().toUpperCase().slice(0, 12); name = String(name || 'Player').trim().slice(0, 20);
+    room = String(room || 'MILAN').trim().toUpperCase().slice(0, 12); name = String(name || 'Player').trim().slice(0, 20);
     if (!rooms.has(room)) rooms.set(room, { players: [], game: null });
     const r = rooms.get(room);
     const existing = r.players.find(p => p.name.toLowerCase() === name.toLowerCase());
