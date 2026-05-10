@@ -1,14 +1,17 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const recordsFile = process.env.BRISCOLA_RECORDS_FILE || path.resolve(__dirname, '../data/head-to-head-records.json');
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 const rooms = new Map();
+const records = loadRecords();
 
 const SUITS = [
   { key: 'hearts', symbol: '♥', label: 'Cups', color: 'red' },
@@ -29,10 +32,16 @@ function beats(challenger, current, leadSuit, trumpSuit) { if (!current) return 
 function trickWinner(table, trumpSuit) { const leadSuit = table[0].card.suit; let winning = table[0]; for (const play of table.slice(1)) if (beats(play.card, winning.card, leadSuit, trumpSuit)) winning = play; return winning.playerIndex; }
 function trickPoints(table) { return table.reduce((sum, play) => sum + play.card.points, 0); }
 function drawFor(game, winnerIndex) { const loser = 1 - winnerIndex; if (game.deck.length) game.hands[winnerIndex].push(game.deck.shift()); if (game.deck.length) game.hands[loser].push(game.deck.shift()); }
-function newGame(players) { const deck = shuffle(createDeck()); const trumpCard = deck[deck.length - 1]; const hands = [deck.splice(0, 3), deck.splice(0, 3)]; return { players, deck, trumpCard, trumpSuit: trumpCard.suit, hands, table: [], scores: [0, 0], lead: 0, turn: 0, lastTrick: null, winner: null, log: [`La briscola is ${trumpCard.suitSymbol} ${trumpCard.suitLabel}.`] }; }
+function newGame(players) { const deck = shuffle(createDeck()); const trumpCard = deck[deck.length - 1]; const hands = [deck.splice(0, 3), deck.splice(0, 3)]; return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, players, deck, trumpCard, trumpSuit: trumpCard.suit, hands, table: [], scores: [0, 0], lead: 0, turn: 0, lastTrick: null, winner: null, log: [`La briscola is ${trumpCard.suitSymbol} ${trumpCard.suitLabel}.`] }; }
 function playCard(game, playerIndex, cardId) { if (game.winner || game.pendingTrick || game.turn !== playerIndex) return game; const idx = game.hands[playerIndex].findIndex(c => c.id === cardId); if (idx < 0) return game; const card = game.hands[playerIndex][idx]; game.hands[playerIndex].splice(idx, 1); game.table.push({ playerIndex, card }); if (game.table.length === 1) { game.turn = 1 - playerIndex; return game; } const wonBy = trickWinner(game.table, game.trumpSuit); const pts = trickPoints(game.table); game.pendingTrick = { wonBy, points: pts, cards: game.table }; game.turn = null; return game; }
-function collectTrick(game) { if (!game?.pendingTrick) return game; const { wonBy, points } = game.pendingTrick; game.scores[wonBy] += points; game.lastTrick = game.pendingTrick; game.log = [`${game.players[wonBy]} takes ${points} point${points === 1 ? '' : 's'}.`, ...(game.log || [])].slice(0, 5); game.table = []; game.pendingTrick = null; game.lead = wonBy; game.turn = wonBy; drawFor(game, wonBy); if (!game.hands[0].length && !game.hands[1].length && !game.deck.length) { if (game.scores[0] === game.scores[1]) game.winner = 'Tie game — 60 to 60.'; else { const w = game.scores[0] > game.scores[1] ? 0 : 1; game.winner = `${game.players[w]} wins ${game.scores[w]}-${game.scores[1 - w]}.`; } } return game; }
-function publicState(room, socketId) { const r = rooms.get(room); if (!r) return null; const idx = r.players.findIndex(p => p.socketId === socketId); const g = r.game; if (!g) return { room, me: idx, players: r.players.map(p => p.name), waiting: true }; return { ...g, room, me: idx, playersOnline: r.players.map(p => p.name), hands: g.hands.map((hand, i) => i === idx ? hand : hand.map(c => ({ id: c.id, hidden: true }))) }; }
+function collectTrick(game) { if (!game?.pendingTrick) return game; const { wonBy, points } = game.pendingTrick; game.scores[wonBy] += points; game.lastTrick = game.pendingTrick; game.log = [`${game.players[wonBy]} takes ${points} point${points === 1 ? '' : 's'}.`, ...(game.log || [])].slice(0, 5); game.table = []; game.pendingTrick = null; game.lead = wonBy; game.turn = wonBy; drawFor(game, wonBy); if (!game.hands[0].length && !game.hands[1].length && !game.deck.length) { if (game.scores[0] === game.scores[1]) { game.winner = 'Tie game — 60 to 60.'; game.result = { tie: true, scores: [...game.scores] }; } else { const w = game.scores[0] > game.scores[1] ? 0 : 1; game.winner = `${game.players[w]} wins ${game.scores[w]}-${game.scores[1 - w]}.`; game.result = { winnerIndex: w, loserIndex: 1 - w, scores: [...game.scores] }; } } return game; }
+function recordKey(players) { return players.map((p) => String(p || '').trim().toLowerCase()).sort().join('::'); }
+function emptyRecord(players) { return { players: [...players], games: 0, ties: 0, wins: Object.fromEntries(players.map((p) => [p, 0])), losses: Object.fromEntries(players.map((p) => [p, 0])) }; }
+function loadRecords() { try { const raw = fs.readFileSync(recordsFile, 'utf8'); return new Map(Object.entries(JSON.parse(raw))); } catch { return new Map(); } }
+function saveRecords() { try { fs.mkdirSync(path.dirname(recordsFile), { recursive: true }); const tmp = `${recordsFile}.tmp`; fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(records), null, 2)); fs.renameSync(tmp, recordsFile); } catch (error) { console.error('Could not save head-to-head records:', error); } }
+function headToHead(players) { return records.get(recordKey(players)) || emptyRecord(players); }
+function recordResult(game) { if (!game?.result || game.recordedResultId === game.id) return; const key = recordKey(game.players); const record = records.get(key) || emptyRecord(game.players); record.players = [...game.players]; record.games += 1; for (const p of game.players) { record.wins[p] ??= 0; record.losses[p] ??= 0; } if (game.result.tie) record.ties += 1; else { const winner = game.players[game.result.winnerIndex]; const loser = game.players[game.result.loserIndex]; record.wins[winner] += 1; record.losses[loser] += 1; } records.set(key, record); saveRecords(); game.recordedResultId = game.id; }
+function publicState(room, socketId) { const r = rooms.get(room); if (!r) return null; const idx = r.players.findIndex(p => p.socketId === socketId); const g = r.game; if (!g) return { room, me: idx, players: r.players.map(p => p.name), waiting: true }; return { ...g, record: headToHead(g.players), room, me: idx, playersOnline: r.players.map(p => p.name), hands: g.hands.map((hand, i) => i === idx ? hand : hand.map(c => ({ id: c.id, hidden: true }))) }; }
 function emitRoom(room) { const r = rooms.get(room); if (!r) return; for (const p of r.players) io.to(p.socketId).emit('state', publicState(room, p.socketId)); }
 
 io.on('connection', (socket) => {
@@ -56,7 +65,7 @@ io.on('connection', (socket) => {
       const hasAceOfSpades = r.game.pendingTrick.cards.some((p) => p.card.id === 'A-spades');
       const hasBigScore = r.game.pendingTrick.points > 14;
       const collectDelay = hasBigScore ? 3800 : hasAceOfSpades ? 2200 : 1600;
-      setTimeout(() => { collectTrick(r.game); emitRoom(room); }, collectDelay);
+      setTimeout(() => { collectTrick(r.game); recordResult(r.game); emitRoom(room); }, collectDelay);
     }
   });
   socket.on('newGame', () => { const room = socket.data.room; const r = rooms.get(room); if (r?.players.length === 2) { r.game = newGame(r.players.map(p => p.name)); emitRoom(room); } });

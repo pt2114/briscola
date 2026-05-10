@@ -85,6 +85,56 @@ function displayName(name) {
   return { main: name, alias: 'Briscola bandit' };
 }
 
+function recordKey(players) {
+  return players.map((p) => String(p || '').trim().toLowerCase()).sort().join('::');
+}
+
+function emptyRecord(players) {
+  return {
+    players: [...players],
+    games: 0,
+    ties: 0,
+    wins: Object.fromEntries(players.map((p) => [p, 0])),
+    losses: Object.fromEntries(players.map((p) => [p, 0])),
+  };
+}
+
+function useLocalHeadToHead(game) {
+  const [records, setRecords] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('briscolaHeadToHeadRecords') || '{}'); }
+    catch { return {}; }
+  });
+  const seenResults = useRef(new Set());
+  const key = recordKey(game.players);
+
+  useEffect(() => {
+    if (!game.result || seenResults.current.has(game.id)) return;
+    seenResults.current.add(game.id);
+    setRecords((current) => {
+      const next = { ...current };
+      const record = next[key] || emptyRecord(game.players);
+      record.players = [...game.players];
+      record.games += 1;
+      for (const player of game.players) {
+        record.wins[player] ??= 0;
+        record.losses[player] ??= 0;
+      }
+      if (game.result.tie) record.ties += 1;
+      else {
+        const winner = game.players[game.result.winnerIndex];
+        const loser = game.players[game.result.loserIndex];
+        record.wins[winner] += 1;
+        record.losses[loser] += 1;
+      }
+      next[key] = record;
+      localStorage.setItem('briscolaHeadToHeadRecords', JSON.stringify(next));
+      return next;
+    });
+  }, [game.id, game.result, game.players, key]);
+
+  return records[key] || emptyRecord(game.players);
+}
+
 function PlayerBadge({ name, turn }) {
   const label = useMemo(() => displayName(name), [name]);
   return <div className="nameplate"><span>{label.main}</span><strong>{label.alias}</strong>{turn && <em>to play</em>}</div>;
@@ -93,6 +143,7 @@ function PlayerBadge({ name, turn }) {
 function useSpecialStinger() {
   const [stinger, setStinger] = useState(null);
   const seen = useRef(new Set());
+  const currentGameId = useRef(null);
   const clearTimer = useRef(null);
 
   function stingerImage(title) {
@@ -140,6 +191,11 @@ function useSpecialStinger() {
   }
 
   function watch(game) {
+    if (game.id && game.id !== currentGameId.current) {
+      currentGameId.current = game.id;
+      seen.current.clear();
+    }
+
     for (const play of game.table || []) {
       const key = `ace-${play.card.id}-${play.playerIndex}`;
       if (play.card.id === 'A-spades' && !seen.current.has(key)) {
@@ -173,17 +229,21 @@ function Card({ card, onClick, disabled, showPoints, small }) {
   );
 }
 
-function ScoreBoard({ game }) {
+function ScoreBoard({ game, record }) {
+  const recordText = record ? `${game.players[0]} ${record.wins?.[game.players[0]] || 0}-${record.losses?.[game.players[0]] || 0} · ${game.players[1]} ${record.wins?.[game.players[1]] || 0}-${record.losses?.[game.players[1]] || 0}${record.ties ? ` · ${record.ties} ties` : ''}` : '';
   return <aside className="scoreboard bliss-hud">
     <div className="hud-title">Pavel & Sid’s Briscola</div>
     <div className="score-row"><span>{game.players[0]}</span><b>{game.scores[0]}</b></div>
     <div className="score-row"><span>{game.players[1]}</span><b>{game.scores[1]}</b></div>
+    <div className="record-row">All-time: {recordText}</div>
     {game.lastTrick && <div className="last">Last: {game.players[game.lastTrick.wonBy]} +{game.lastTrick.points}</div>}
   </aside>;
 }
 
 function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0 }) {
   const specialStinger = useSpecialStinger();
+  const localRecord = useLocalHeadToHead(game);
+  const record = mode === 'multi' ? (game.record || localRecord) : localRecord;
   const isStingerOpen = Boolean(specialStinger.stinger);
   const isMyTurn = game.turn === myIndex && !game.winner && !game.pendingTrick;
   const canPlay = (playerIndex) => !isStingerOpen && (mode !== 'multi' ? playerIndex === 0 && isMyTurn : playerIndex === myIndex && isMyTurn);
@@ -230,7 +290,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
   }, [game.table, game.pendingTrick, game.winner, game.lastTrick, soundEnabled]);
 
   return <main className="game-shell">
-    <ScoreBoard game={game} />
+    <ScoreBoard game={game} record={record} />
     {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
       <div className="player top">
@@ -318,7 +378,7 @@ function App() {
     <div className="app-header"><button onClick={() => setMode('lobby')}>‹ Menu</button><div><strong>Pavel & Sid’s</strong><span>Briscola</span></div><button className="settings-button" onClick={() => setSettingsOpen(true)}>⚙︎</button></div>
     {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-grabber" /><h2>Settings</h2><label className="setting-row"><span>Show point values</span><input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} /></label><label className="setting-row"><span>Sound effects</span><input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} /></label><div className="setting-block"><span>Computer difficulty</span><div className="difficulty-grid">{[['easy','Easy'],['medium','Medium'],['hard','Hard'],['extra-hard','Extra Hard']].map(([value,label]) => <button key={value} className={difficulty === value ? 'selected' : ''} onClick={() => setDifficulty(value)}>{label}</button>)}</div></div><button className="done-button" onClick={() => setSettingsOpen(false)}>Done</button></section></div>}
     {mode === 'lobby' && <Lobby onSingle={(player) => { setSingleGame(player === 'sid' ? newGame(['Sid', 'Pavel Computer']) : newGame(['Pavel', 'Sid Computer'])); setMode('single'); }} onMulti={(name, room) => { setLogin({ name, room }); setMode('multi'); }} />}
-    {mode === 'single' && <><GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} difficulty={difficulty} /><button className="floating" onClick={() => setSingleGame(newGame(['Pavel', 'Computer']))}>New game</button></>}
+    {mode === 'single' && <><GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} difficulty={difficulty} /><button className="floating" onClick={() => setSingleGame((game) => newGame(game.players))}>New game</button></>}
     {mode === 'multi' && <Multiplayer name={login.name} room={login.room} showPoints={showPoints} soundEnabled={soundEnabled} />}
   </>;
 }

@@ -45,6 +45,7 @@ export function newGame(players = ['Pavel', 'Computer']) {
   const trumpCard = deck[deck.length - 1];
   const hands = [deck.splice(0, 3), deck.splice(0, 3)];
   return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     players,
     deck,
     trumpCard,
@@ -125,10 +126,13 @@ export function collectTrick(game) {
   drawFor(next, wonBy);
 
   if (next.hands[0].length === 0 && next.hands[1].length === 0 && next.deck.length === 0) {
-    if (next.scores[0] === next.scores[1]) next.winner = 'Tie game — 60 to 60.';
-    else {
+    if (next.scores[0] === next.scores[1]) {
+      next.winner = 'Tie game — 60 to 60.';
+      next.result = { tie: true, scores: [...next.scores] };
+    } else {
       const w = next.scores[0] > next.scores[1] ? 0 : 1;
       next.winner = `${next.players[w]} wins ${next.scores[w]}-${next.scores[1 - w]}.`;
+      next.result = { winnerIndex: w, loserIndex: 1 - w, scores: [...next.scores] };
     }
   }
   return next;
