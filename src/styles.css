@@ -34,3 +34,17 @@ body{background:radial-gradient(circle at 50% 38%,#19845c 0,#0a2d22 70%);}
 /* Lightweight multiplayer chat: inline so it does not cover the cards */
 .chat-tray{display:flex;align-items:center;gap:8px;max-width:min(520px,92vw)}.chat-toggle{white-space:nowrap}.chat-peek{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 10px;border-radius:999px;background:rgba(5,31,23,.72);border:1px solid rgba(255,255,255,.14);font-size:12px;font-weight:800;color:#eaf8f0}.chat-peek b{color:#f7d986}.chat-tray.open{display:grid;grid-template-columns:auto minmax(240px,420px);align-items:start}.chat-panel{padding:8px;border-radius:16px;background:rgba(5,31,23,.88);border:1px solid rgba(255,255,255,.16);box-shadow:0 10px 26px rgba(0,0,0,.22)}.chat-messages{max-height:108px;overflow:auto;display:grid;gap:5px;padding:2px 2px 7px}.chat-messages p{margin:0;display:flex;gap:7px;font-size:12px;line-height:1.25}.chat-messages b{color:#f7d986;white-space:nowrap}.chat-messages span{color:#f1fff6}.chat-messages em{font-size:12px;color:rgba(255,255,255,.7);font-style:normal}.chat-form{display:grid;grid-template-columns:1fr auto;gap:7px}.chat-form input{padding:9px 10px;border-radius:12px;font-size:13px}.chat-form button{padding:8px 11px;border-radius:12px}
 @media(max-width:850px){.chat-tray{order:3;grid-column:1/-1;width:100%;justify-content:center}.chat-tray.open{grid-template-columns:1fr;width:100%}.chat-toggle{width:100%}.chat-peek{display:none}.chat-panel{width:100%}.chat-messages{max-height:82px}.table-actions{display:grid;grid-template-columns:1fr 1fr;align-items:start}}
+
+/* Mobile fit pass: action row should not push cards off-screen */
+@media(max-width:850px){
+  .game-shell{height:100svh;min-height:100svh;overflow:hidden;padding:calc(52px + env(safe-area-inset-top)) 5px calc(8px + env(safe-area-inset-bottom));grid-template-rows:auto auto minmax(0,1fr);gap:5px}
+  .scoreboard.bliss-hud{padding:5px 7px;gap:4px;border-radius:12px}
+  .score-row{padding:4px 7px}.score-row b{font-size:17px}.record-row{font-size:9px;line-height:1.1}
+  .table-actions{display:flex;flex-wrap:nowrap;margin:0;gap:6px;min-height:0}
+  .table-actions button{padding:6px 9px;font-size:11px;box-shadow:0 2px 0 #8b6924,0 6px 14px rgba(0,0,0,.22)}
+  .chat-tray{order:0;grid-column:auto;width:auto;max-width:38vw}.chat-toggle{width:auto}.chat-tray.open{position:fixed;z-index:90;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));display:block;max-width:none;width:auto}.chat-tray.open .chat-toggle{width:100%;margin-bottom:6px}.chat-panel{max-height:34vh}.chat-messages{max-height:95px}
+  .felt.bliss-table{min-height:0;height:100%;grid-template-rows:.78fr 1.15fr .95fr;border-radius:16px}
+  .player{padding:6px 4px;gap:4px}.bottom{padding-bottom:5px}.nameplate{padding:4px 7px;font-size:11px}.nameplate strong{font-size:8px}.nameplate em{font-size:9px}
+  .hand{gap:5px}.card{width:72px;height:100px}.card.small{width:46px;height:64px}.pip{font-size:34px;margin-top:31px}.card.small .pip{font-size:25px;margin-top:24px}.corner{font-size:13px}.card.small .corner{font-size:10px}.points{font-size:8px;padding:1px 4px}
+  .table-zone{min-height:0}.played-cards{min-height:112px;padding:6px 8px}.stock-area{left:7px;padding:4px 6px;gap:6px}.turn-banner{font-size:10px;padding:4px 8px}
+}
