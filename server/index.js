@@ -41,13 +41,13 @@ function loadRecords() { try { const raw = fs.readFileSync(recordsFile, 'utf8');
 function saveRecords() { try { fs.mkdirSync(path.dirname(recordsFile), { recursive: true }); const tmp = `${recordsFile}.tmp`; fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(records), null, 2)); fs.renameSync(tmp, recordsFile); } catch (error) { console.error('Could not save head-to-head records:', error); } }
 function headToHead(players) { return records.get(recordKey(players)) || emptyRecord(players); }
 function recordResult(game) { if (!game?.result || game.recordedResultId === game.id) return; const key = recordKey(game.players); const record = records.get(key) || emptyRecord(game.players); record.players = [...game.players]; record.games += 1; for (const p of game.players) { record.wins[p] ??= 0; record.losses[p] ??= 0; } if (game.result.tie) record.ties += 1; else { const winner = game.players[game.result.winnerIndex]; const loser = game.players[game.result.loserIndex]; record.wins[winner] += 1; record.losses[loser] += 1; } records.set(key, record); saveRecords(); game.recordedResultId = game.id; }
-function publicState(room, socketId) { const r = rooms.get(room); if (!r) return null; const idx = r.players.findIndex(p => p.socketId === socketId); const g = r.game; if (!g) return { room, me: idx, players: r.players.map(p => p.name), waiting: true }; return { ...g, record: headToHead(g.players), room, me: idx, playersOnline: r.players.map(p => p.name), hands: g.hands.map((hand, i) => i === idx ? hand : hand.map(c => ({ id: c.id, hidden: true }))) }; }
+function publicState(room, socketId) { const r = rooms.get(room); if (!r) return null; const idx = r.players.findIndex(p => p.socketId === socketId); const g = r.game; if (!g) return { room, me: idx, players: r.players.map(p => p.name), chat: r.chat || [], waiting: true }; return { ...g, record: headToHead(g.players), room, me: idx, playersOnline: r.players.map(p => p.name), chat: r.chat || [], hands: g.hands.map((hand, i) => i === idx ? hand : hand.map(c => ({ id: c.id, hidden: true }))) }; }
 function emitRoom(room) { const r = rooms.get(room); if (!r) return; for (const p of r.players) io.to(p.socketId).emit('state', publicState(room, p.socketId)); }
 
 io.on('connection', (socket) => {
   socket.on('join', ({ room, name }) => {
     room = String(room || 'MILAN').trim().toUpperCase().slice(0, 12); name = String(name || 'Player').trim().slice(0, 20);
-    if (!rooms.has(room)) rooms.set(room, { players: [], game: null });
+    if (!rooms.has(room)) rooms.set(room, { players: [], game: null, chat: [] });
     const r = rooms.get(room);
     const existing = r.players.find(p => p.name.toLowerCase() === name.toLowerCase());
     if (existing) existing.socketId = socket.id;
@@ -68,6 +68,7 @@ io.on('connection', (socket) => {
       setTimeout(() => { collectTrick(r.game); recordResult(r.game); emitRoom(room); }, collectDelay);
     }
   });
+  socket.on('chatMessage', ({ text }) => { const room = socket.data.room; const r = rooms.get(room); if (!r) return; const player = r.players.find(p => p.socketId === socket.id); const clean = String(text || '').trim().slice(0, 180); if (!clean) return; r.chat = [...(r.chat || []), { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, sender: player?.name || 'Player', text: clean, ts: Date.now() }].slice(-30); emitRoom(room); });
   socket.on('newGame', () => { const room = socket.data.room; const r = rooms.get(room); if (r?.players.length === 2) { r.game = newGame(r.players.map(p => p.name)); emitRoom(room); } });
   socket.on('disconnect', () => { if (socket.data.room) emitRoom(socket.data.room); });
 });

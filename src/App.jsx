@@ -233,6 +233,34 @@ function Card({ card, onClick, disabled, showPoints, small }) {
   );
 }
 
+function ChatTray({ messages = [], onSend }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const latest = messages[messages.length - 1];
+
+  function send(e) {
+    e.preventDefault();
+    const clean = text.trim();
+    if (!clean) return;
+    onSend?.(clean);
+    setText('');
+  }
+
+  return <section className={`chat-tray ${open ? 'open' : ''}`}>
+    <button className="chat-toggle" onClick={() => setOpen((value) => !value)}>{open ? 'Hide chat' : `Chat${messages.length ? ` · ${messages.length}` : ''}`}</button>
+    {!open && latest && <div className="chat-peek"><b>{latest.sender}:</b> {latest.text}</div>}
+    {open && <div className="chat-panel">
+      <div className="chat-messages">
+        {messages.length ? messages.slice(-8).map((m) => <p key={m.id}><b>{m.sender}</b><span>{m.text}</span></p>) : <em>No messages yet. Talk your trash.</em>}
+      </div>
+      <form className="chat-form" onSubmit={send}>
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Message" maxLength={180} />
+        <button type="submit">Send</button>
+      </form>
+    </div>}
+  </section>;
+}
+
 function ScoreBoard({ game, record }) {
   const recordText = record ? `${game.players[0]} ${record.wins?.[game.players[0]] || 0}-${record.losses?.[game.players[0]] || 0} · ${game.players[1]} ${record.wins?.[game.players[1]] || 0}-${record.losses?.[game.players[1]] || 0}${record.ties ? ` · ${record.ties} ties` : ''}` : '';
   return <aside className="scoreboard bliss-hud">
@@ -244,7 +272,7 @@ function ScoreBoard({ game, record }) {
   </aside>;
 }
 
-function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0, onNewGame }) {
+function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0, onNewGame, chatMessages = [], onChatSend }) {
   const specialStinger = useSpecialStinger();
   const localRecord = useLocalHeadToHead(game);
   const record = mode === 'multi' ? (game.record || localRecord) : localRecord;
@@ -297,6 +325,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
     <ScoreBoard game={game} record={record} />
     <div className="table-actions">
       <button className="stacked-reaction" onClick={specialStinger.stackedReaction}>Stacked</button>
+      {mode === 'multi' && <ChatTray messages={chatMessages} onSend={onChatSend} />}
       {onNewGame && <button onClick={onNewGame}>New game</button>}
     </div>
     {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 36 }, (_, i) => <i key={i} style={{ left: `${(i * 29) % 100}%`, animationDelay: `${(i % 9) * 0.06}s`, transform: `rotate(${i * 17}deg)` }} />)}</div>}
@@ -372,7 +401,7 @@ function Multiplayer({ name, room, showPoints, soundEnabled }) {
   }, [socket, name, room]);
   if (error) return <div className="center-card">{error}</div>;
   if (!state || state.waiting) return <div className="center-card"><h2>Waiting in room {room.toUpperCase()}</h2><p>Have the other player join as Pavel or Sid.</p></div>;
-  return <GameTable game={state} mode="multi" socket={socket} showPoints={showPoints} soundEnabled={soundEnabled} myIndex={state.me} onNewGame={() => socket.emit('newGame')} />;
+  return <GameTable game={state} mode="multi" socket={socket} showPoints={showPoints} soundEnabled={soundEnabled} myIndex={state.me} onNewGame={() => socket.emit('newGame')} chatMessages={state.chat || []} onChatSend={(text) => socket.emit('chatMessage', { text })} />;
 }
 
 function App() {
