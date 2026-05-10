@@ -183,6 +183,8 @@ function ScoreBoard({ game }) {
 }
 
 function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, difficulty, myIndex = 0 }) {
+  const specialStinger = useSpecialStinger();
+  const isStingerOpen = Boolean(specialStinger.stinger);
   const isMyTurn = game.turn === myIndex && !game.winner && !game.pendingTrick;
   const canPlay = (playerIndex) => !isStingerOpen && (mode !== 'multi' ? playerIndex === 0 && isMyTurn : playerIndex === myIndex && isMyTurn);
 
@@ -212,9 +214,6 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
 
   const topIndex = mode === 'multi' ? 1 - myIndex : 1;
   const bottomIndex = myIndex;
-
-  const specialStinger = useSpecialStinger();
-  const isStingerOpen = Boolean(specialStinger.stinger);
 
   const prevTableCount = useRef(game.table?.length || 0);
   const prevPending = useRef(Boolean(game.pendingTrick));
