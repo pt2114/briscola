@@ -191,8 +191,38 @@ function useSpecialStinger() {
     flash(line, `${points} point trick`, isSid ? 'sid' : 'pavel', 3600);
   }
 
+  function playCoinShower() {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 1.45);
+    master.connect(ctx.destination);
+
+    Array.from({ length: 18 }, (_, i) => {
+      const t = now + i * 0.055;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = i % 3 === 0 ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(980 + (i % 6) * 145, t);
+      osc.frequency.exponentialRampToValueAtTime(520 + (i % 5) * 85, t + 0.16);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.075, t + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      osc.connect(gain).connect(master);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    });
+
+    setTimeout(() => ctx.close?.(), 1800);
+  }
+
   function stackedReaction() {
-    flash('He’s stacked!!!', '', 'stacked', 1800);
+    flash('He’s stacked!!!', '', 'stacked', 2300);
+    playCoinShower();
   }
 
   function watch(game) {
@@ -343,7 +373,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
       {mode === 'multi' && <ChatTray messages={chatMessages} onSend={onChatSend} />}
       {onNewGame && <button onClick={onNewGame}>New game</button>}
     </div>
-    {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 36 }, (_, i) => <i key={i} style={{ left: `${(i * 29) % 100}%`, animationDelay: `${(i % 9) * 0.06}s`, transform: `rotate(${i * 17}deg)` }} />)}</div>}
+    {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 96 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${(i % 16) * 0.035}s`, '--drift': `${((i * 53) % 180) - 90}px`, '--spin': `${(i * 47) % 720}deg`, '--scale': `${0.7 + ((i * 11) % 9) / 10}` }} />)}</div>}
     {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
       <div className="player top">
