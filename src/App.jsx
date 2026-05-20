@@ -168,6 +168,7 @@ function useSpecialStinger() {
     if (title === 'Mr. Freeze!') return '/audio/catchphrases/mr-freeze.m4a';
     if (title === 'Casanova') return '/audio/catchphrases/casanova.m4a';
     if (title === 'Sid has a big cock!') return '/audio/catchphrases/big-cock-alert.m4a';
+    if (title === 'He’s stacked!!!') return '/audio/reactions/stacked.m4a';
     return null;
   }
 
@@ -286,6 +287,20 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
     else setGame((g) => playCard(g, 0, cardId));
   }
 
+  function stackedReaction() {
+    if (mode === 'multi') socket.emit('reaction', { type: 'stacked' });
+    else specialStinger.stackedReaction();
+  }
+
+  useEffect(() => {
+    if (mode !== 'multi' || !socket) return;
+    const onReaction = ({ type }) => {
+      if (type === 'stacked') specialStinger.stackedReaction();
+    };
+    socket.on('reaction', onReaction);
+    return () => socket.off('reaction', onReaction);
+  }, [mode, socket, specialStinger]);
+
   useEffect(() => {
     if (mode !== 'single' || isStingerOpen || game.winner || game.turn !== 1 || game.pendingTrick) return;
     const t = setTimeout(() => {
@@ -324,7 +339,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
   return <main className="game-shell">
     <ScoreBoard game={game} record={record} />
     <div className="table-actions">
-      <button className="stacked-reaction" onClick={specialStinger.stackedReaction}>Stacked</button>
+      <button className="stacked-reaction" onClick={stackedReaction}>Stacked</button>
       {mode === 'multi' && <ChatTray messages={chatMessages} onSend={onChatSend} />}
       {onNewGame && <button onClick={onNewGame}>New game</button>}
     </div>
