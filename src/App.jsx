@@ -73,8 +73,8 @@ const SID_CHANTS = [
   'Djemba Djemba!',
   "In the land of Uncle Sid’s!",
   'Mr. Freeze!',
-  'Casanova!',
-  'Big Cock Alert!',
+  'Casanova',
+  'Sid has a big cock!',
 ];
 
 function displayName(name) {
@@ -166,8 +166,8 @@ function useSpecialStinger() {
     if (title === 'Djemba Djemba!') return '/audio/catchphrases/djemba-djemba.m4a';
     if (title === "In the land of Uncle Sid’s!") return '/audio/catchphrases/uncle-sids.m4a';
     if (title === 'Mr. Freeze!') return '/audio/catchphrases/mr-freeze.m4a';
-    if (title === 'Casanova!') return '/audio/catchphrases/casanova.m4a';
-    if (title === 'Big Cock Alert!') return '/audio/catchphrases/big-cock-alert.m4a';
+    if (title === 'Casanova') return '/audio/catchphrases/casanova.m4a';
+    if (title === 'Sid has a big cock!') return '/audio/catchphrases/big-cock-alert.m4a';
     return null;
   }
 

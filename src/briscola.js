@@ -34,18 +34,30 @@ export function createDeck() {
 export function shuffle(deck) {
   const d = [...deck];
   for (let i = d.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomIndex(i + 1);
     [d[i], d[j]] = [d[j], d[i]];
   }
   return d;
+}
+
+function randomIndex(maxExclusive) {
+  if (globalThis.crypto?.getRandomValues) {
+    const limit = Math.floor(0xffffffff / maxExclusive) * maxExclusive;
+    const bucket = new Uint32Array(1);
+    do globalThis.crypto.getRandomValues(bucket);
+    while (bucket[0] >= limit);
+    return bucket[0] % maxExclusive;
+  }
+  return Math.floor(Math.random() * maxExclusive);
 }
 
 export function newGame(players = ['Pavel', 'Computer']) {
   const deck = shuffle(createDeck());
   const trumpCard = deck[deck.length - 1];
   const hands = [deck.splice(0, 3), deck.splice(0, 3)];
+  const startingPlayerIndex = randomIndex(players.length);
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id: `${Date.now()}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`,
     players,
     deck,
     trumpCard,
@@ -53,11 +65,12 @@ export function newGame(players = ['Pavel', 'Computer']) {
     hands,
     table: [],
     scores: [0, 0],
-    lead: 0,
-    turn: 0,
+    lead: startingPlayerIndex,
+    turn: startingPlayerIndex,
+    startingPlayerIndex,
     lastTrick: null,
     winner: null,
-    log: [`La briscola is ${trumpCard.suitSymbol} ${trumpCard.suitLabel}.`],
+    log: [`${players[startingPlayerIndex]} starts this game.`, `La briscola is ${trumpCard.suitSymbol} ${trumpCard.suitLabel}.`],
   };
 }
 
