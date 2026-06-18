@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
 import { chooseBotCard, collectTrick, newGame, playCard } from './briscola.js';
@@ -6,11 +6,35 @@ import './styles.css';
 
 const SERVER_URL = import.meta.env.VITE_BRISCOLA_SERVER || window.location.origin;
 
+let sharedAudioContext = null;
+const mediaAudioCache = new Map();
+
+function getAudioContext() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return null;
+  if (!sharedAudioContext || sharedAudioContext.state === 'closed') sharedAudioContext = new AudioCtx();
+  if (sharedAudioContext.state === 'suspended') sharedAudioContext.resume?.().catch(() => {});
+  return sharedAudioContext;
+}
+
+function playMediaAudio(src) {
+  if (!src) return;
+  let audio = mediaAudioCache.get(src);
+  if (!audio) {
+    audio = new Audio(src);
+    audio.preload = 'auto';
+    mediaAudioCache.set(src, audio);
+  }
+  const player = audio.paused ? audio : audio.cloneNode(true);
+  player.currentTime = 0;
+  player.volume = 1;
+  player.play().catch(() => {});
+}
+
 function playSfx(kind, enabled = true) {
   if (!enabled) return;
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
-  const ctx = new AudioCtx();
+  const ctx = getAudioContext();
+  if (!ctx) return;
   const now = ctx.currentTime;
   const gain = ctx.createGain();
   gain.connect(ctx.destination);
@@ -58,7 +82,7 @@ function playSfx(kind, enabled = true) {
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
   }
 
-  setTimeout(() => ctx.close?.(), 900);
+  setTimeout(() => gain.disconnect(), 1200);
 }
 
 const PAVEL_CHANTS = [
@@ -145,6 +169,11 @@ function useSpecialStinger() {
   const seen = useRef(new Set());
   const currentGameId = useRef(null);
   const clearTimer = useRef(null);
+  const stingerUntil = useRef(0);
+
+  useEffect(() => () => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+  }, []);
 
   function stingerImage(title) {
     if (title === 'ACE OF SPADES') return '/ace-of-spades-pavel.jpg';
@@ -158,43 +187,33 @@ function useSpecialStinger() {
 
   function stingerAudio(title) {
     if (title === 'ACE OF SPADES') return '/audio/ace-of-spades-chant.m4a';
-    if (title === 'Pablo El Diablo!') return '/audio/catchphrases/pablo-el-diablo.m4a';
-    if (title === 'Pavel superstar!') return '/audio/catchphrases/pavel-superstar.m4a';
-    if (title === 'Pavel rock and roll!') return '/audio/catchphrases/pavel-rock-and-roll.m4a';
-    if (title === 'Pavel the navel takes the table!') return '/audio/catchphrases/pavel-navel-table.m4a';
-    if (title === 'Italian Stallion!') return '/audio/catchphrases/italian-stallion.m4a';
-    if (title === 'Djemba Djemba!') return '/audio/catchphrases/djemba-djemba.m4a';
-    if (title === "In the land of Uncle Sid’s!") return '/audio/catchphrases/uncle-sids.m4a';
-    if (title === 'Mr. Freeze!') return '/audio/catchphrases/mr-freeze.m4a';
-    if (title === 'Casanova') return '/audio/catchphrases/casanova.m4a';
-    if (title === 'Sid has a big cock!') return '/audio/catchphrases/big-cock-alert.m4a';
-    if (title === 'He’s stacked!!!') return '/audio/reactions/stacked.m4a';
     return null;
   }
 
-  function flash(title, subtitle = '', flavor = 'neutral', duration = 1000) {
+  const flash = useCallback((title, subtitle = '', flavor = 'neutral', duration = 1000, options = {}) => {
+    const now = Date.now();
+    if (!options.replace && now < stingerUntil.current) return false;
     if (clearTimer.current) clearTimeout(clearTimer.current);
+    stingerUntil.current = now + duration + 120;
     setStinger({ title, subtitle, flavor, image: stingerImage(title) });
-    const audioSrc = stingerAudio(title);
-    if (audioSrc) {
-      const audio = new Audio(audioSrc);
-      audio.volume = 1;
-      audio.play().catch(() => {});
-    }
-    clearTimer.current = setTimeout(() => setStinger(null), duration);
-  }
+    playMediaAudio(stingerAudio(title));
+    clearTimer.current = setTimeout(() => {
+      setStinger(null);
+      stingerUntil.current = 0;
+    }, duration);
+    return true;
+  }, []);
 
-  function bigScoreLine(playerName, points) {
+  const bigScoreLine = useCallback((playerName, points) => {
     const isSid = String(playerName || '').toLowerCase().includes('sid');
     const lines = isSid ? SID_CHANTS : PAVEL_CHANTS;
     const line = lines[Math.floor(Math.random() * lines.length)];
-    flash(line, `${points} point trick`, isSid ? 'sid' : 'pavel', 3600);
-  }
+    flash(line, `${points} point trick`, isSid ? 'sid' : 'pavel', 1600);
+  }, [flash]);
 
-  function playCoinShower() {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+  const playCoinShower = useCallback(() => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
@@ -202,7 +221,7 @@ function useSpecialStinger() {
     master.gain.exponentialRampToValueAtTime(0.0001, now + 1.45);
     master.connect(ctx.destination);
 
-    Array.from({ length: 18 }, (_, i) => {
+    Array.from({ length: 12 }, (_, i) => {
       const t = now + i * 0.055;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -217,15 +236,14 @@ function useSpecialStinger() {
       osc.stop(t + 0.2);
     });
 
-    setTimeout(() => ctx.close?.(), 1800);
-  }
+    setTimeout(() => master.disconnect(), 1800);
+  }, []);
 
-  function stackedReaction() {
-    flash('He’s stacked!!!', '', 'stacked', 2300);
-    playCoinShower();
-  }
+  const stackedReaction = useCallback(() => {
+    if (flash('He’s stacked!!!', '', 'stacked', 1200, { replace: true })) playCoinShower();
+  }, [flash, playCoinShower]);
 
-  function watch(game) {
+  const watch = useCallback((game) => {
     if (game.id && game.id !== currentGameId.current) {
       currentGameId.current = game.id;
       seen.current.clear();
@@ -235,7 +253,7 @@ function useSpecialStinger() {
       const key = `ace-${play.card.id}-${play.playerIndex}`;
       if (play.card.id === 'A-spades' && !seen.current.has(key)) {
         seen.current.add(key);
-        flash('ACE OF SPADES', '', 'neutral', 2000);
+        flash('ACE OF SPADES', '', 'neutral', 1500);
       }
     }
 
@@ -246,9 +264,9 @@ function useSpecialStinger() {
         bigScoreLine(game.players[game.pendingTrick.wonBy], game.pendingTrick.points);
       }
     }
-  }
+  }, [bigScoreLine, flash]);
 
-  return { stinger, watch, stackedReaction };
+  return useMemo(() => ({ stinger, watch, stackedReaction }), [stinger, watch, stackedReaction]);
 }
 
 function Card({ card, onClick, disabled, showPoints, small }) {
@@ -312,7 +330,6 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
   const canPlay = (playerIndex) => !isStingerOpen && (mode !== 'multi' ? playerIndex === 0 && isMyTurn : playerIndex === myIndex && isMyTurn);
 
   function play(cardId) {
-    playSfx('card', soundEnabled);
     if (mode === 'multi') socket.emit('play', { cardId });
     else setGame((g) => playCard(g, 0, cardId));
   }
@@ -329,25 +346,23 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
     };
     socket.on('reaction', onReaction);
     return () => socket.off('reaction', onReaction);
-  }, [mode, socket, specialStinger]);
+  }, [mode, socket, specialStinger.stackedReaction]);
 
   useEffect(() => {
     if (mode !== 'single' || isStingerOpen || game.winner || game.turn !== 1 || game.pendingTrick) return;
     const t = setTimeout(() => {
-      playSfx('card', soundEnabled);
       setGame((g) => playCard(g, 1, chooseBotCard(g, 1, difficulty)));
-    }, 900);
+    }, 650);
     return () => clearTimeout(t);
   }, [game, mode, setGame, soundEnabled, difficulty, isStingerOpen]);
 
   useEffect(() => {
-    if (mode !== 'single' || isStingerOpen || !game.pendingTrick) return;
+    if (mode !== 'single' || !game.pendingTrick) return;
     const t = setTimeout(() => {
-      playSfx('take', soundEnabled);
       setGame((g) => collectTrick(g));
-    }, 1600);
+    }, 900);
     return () => clearTimeout(t);
-  }, [game.pendingTrick, mode, setGame, soundEnabled, isStingerOpen]);
+  }, [game.pendingTrick, mode, setGame]);
 
   const topIndex = mode === 'multi' ? 1 - myIndex : 1;
   const bottomIndex = myIndex;
@@ -364,16 +379,16 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, diff
     prevTableCount.current = game.table?.length || 0;
     prevPending.current = Boolean(game.pendingTrick);
     prevWinner.current = game.winner;
-  }, [game.table, game.pendingTrick, game.winner, game.lastTrick, soundEnabled]);
+  }, [game.table, game.pendingTrick, game.winner, soundEnabled, specialStinger.watch]);
 
   return <main className="game-shell">
     <ScoreBoard game={game} record={record} />
     <div className="table-actions">
       <button className="stacked-reaction" onClick={stackedReaction}>Stacked</button>
-      {mode === 'multi' && <ChatTray messages={chatMessages} onSend={onChatSend} />}
       {onNewGame && <button onClick={onNewGame}>New game</button>}
     </div>
-    {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 96 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${(i % 16) * 0.035}s`, '--drift': `${((i * 53) % 180) - 90}px`, '--spin': `${(i * 47) % 720}deg`, '--scale': `${0.7 + ((i * 11) % 9) / 10}` }} />)}</div>}
+    {mode === 'multi' && <ChatTray messages={chatMessages} onSend={onChatSend} />}
+    {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 48 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${(i % 16) * 0.035}s`, '--drift': `${((i * 53) % 180) - 90}px`, '--spin': `${(i * 47) % 720}deg`, '--scale': `${0.7 + ((i * 11) % 9) / 10}` }} />)}</div>}
     {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
       <div className="player top">

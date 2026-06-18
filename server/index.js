@@ -76,7 +76,7 @@ io.on('connection', (socket) => {
     if (r.game.pendingTrick) {
       const hasAceOfSpades = r.game.pendingTrick.cards.some((p) => p.card.id === 'A-spades');
       const hasBigScore = r.game.pendingTrick.points > 14;
-      const collectDelay = hasBigScore ? 3800 : hasAceOfSpades ? 2200 : 1600;
+      const collectDelay = hasBigScore || hasAceOfSpades ? 1100 : 900;
       setTimeout(() => { collectTrick(r.game); recordResult(r.game); emitRoom(room); }, collectDelay);
     }
   });
