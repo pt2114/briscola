@@ -161,11 +161,15 @@ export function chooseBotCard(game, botIndex = 1, difficulty = 'hard') {
 
   if (difficulty === 'easy') return randomCard.id;
 
+  if (difficulty === 'extra-hard') {
+    const searched = chooseSearchCard(game, botIndex);
+    if (searched) return searched;
+  }
+
   if (table.length === 0) {
     if (difficulty === 'medium') return cheap.id;
     const nonTrump = hand.filter((c) => c.suit !== game.trumpSuit);
     const safeLead = (nonTrump.length ? nonTrump : hand).sort((a, b) => a.points - b.points || a.strength - b.strength)[0];
-    if (difficulty === 'extra-hard' && game.deck.length <= 8) return richest.id;
     return safeLead.id;
   }
 
@@ -184,11 +188,121 @@ export function chooseBotCard(game, botIndex = 1, difficulty = 'hard') {
 
   if (winningCards.length) {
     const cheapestWinner = winningCards.sort((a, b) => a.points - b.points || a.strength - b.strength)[0];
-    const bestWinner = winningCards.sort((a, b) => b.points - a.points || a.strength - b.strength)[0];
-    if (difficulty === 'extra-hard' && tablePts + bestWinner.points >= 10) return bestWinner.id;
     if (tablePts >= 2 || game.deck.length <= 10) return cheapestWinner.id;
   }
 
   const discardPool = losingCards.length ? losingCards : hand;
   return discardPool.sort((a, b) => a.points - b.points || a.strength - b.strength)[0].id;
+}
+
+function chooseSearchCard(game, botIndex) {
+  const hand = game.hands[botIndex] || [];
+  if (!hand.length) return null;
+  const opponentIndex = 1 - botIndex;
+  const totalUnplayed = game.deck.length + game.hands[0].length + game.hands[1].length + game.table.length;
+  const searchDepth = totalUnplayed <= 10 ? 10 : totalUnplayed <= 16 ? 5 : 2;
+  const candidates = rankCandidates(game, botIndex, botIndex);
+  let best = candidates[0];
+  let bestScore = -Infinity;
+  const memo = new Map();
+
+  for (const card of candidates) {
+    const next = playCard(game, botIndex, card.id);
+    const score = minimax(next, botIndex, opponentIndex, searchDepth - 1, -Infinity, Infinity, memo);
+    if (score > bestScore + 0.0001 || (Math.abs(score - bestScore) < 0.0001 && tieBreakCard(card, game) > tieBreakCard(best, game))) {
+      best = card;
+      bestScore = score;
+    }
+  }
+  return best?.id || null;
+}
+
+function minimax(game, botIndex, opponentIndex, depth, alpha, beta, memo) {
+  if (game.pendingTrick) return minimax(collectTrick(game), botIndex, opponentIndex, depth, alpha, beta, memo);
+  if (game.winner || depth <= 0) return evaluateGame(game, botIndex);
+
+  const key = memoKey(game, botIndex, depth);
+  if (memo.has(key)) return memo.get(key);
+
+  const maximizing = game.turn === botIndex;
+  const candidates = rankCandidates(game, game.turn, botIndex);
+  let value = maximizing ? -Infinity : Infinity;
+
+  for (const card of candidates) {
+    const next = playCard(game, game.turn, card.id);
+    const score = minimax(next, botIndex, opponentIndex, depth - 1, alpha, beta, memo);
+    if (maximizing) {
+      value = Math.max(value, score);
+      alpha = Math.max(alpha, value);
+    } else {
+      value = Math.min(value, score);
+      beta = Math.min(beta, value);
+    }
+    if (beta <= alpha) break;
+  }
+
+  memo.set(key, value);
+  return value;
+}
+
+function rankCandidates(game, playerIndex, botIndex) {
+  return [...(game.hands[playerIndex] || [])].sort((a, b) => heuristicCardScore(b, game, playerIndex, botIndex) - heuristicCardScore(a, game, playerIndex, botIndex));
+}
+
+function heuristicCardScore(card, game, playerIndex, botIndex) {
+  const opponentIndex = 1 - playerIndex;
+  const isBot = playerIndex === botIndex;
+  const table = game.table || [];
+  const trumpBonus = card.suit === game.trumpSuit ? 1.8 : 0;
+  const cardCost = card.points * 1.7 + card.strength * 0.18 + trumpBonus;
+
+  if (!table.length) {
+    const opponentHand = game.hands[opponentIndex] || [];
+    const canBeBeaten = opponentHand.some((opp) => trickWinner([
+      { playerIndex, card },
+      { playerIndex: opponentIndex, card: opp },
+    ], game.trumpSuit) === opponentIndex);
+    const guaranteedWin = opponentHand.length > 0 && !canBeBeaten;
+    const late = game.deck.length <= 8;
+    let score = guaranteedWin ? 8 + card.points : -cardCost;
+    if (late && guaranteedWin) score += card.points * 2;
+    if (card.suit === game.trumpSuit && !late) score -= 4;
+    return isBot ? score : -score;
+  }
+
+  const tableCard = table[0].card;
+  const wouldWin = trickWinner([table[0], { playerIndex, card }], game.trumpSuit) === playerIndex;
+  const trickValue = tableCard.points + card.points;
+  let score = wouldWin ? trickValue * 4 - cardCost : -cardCost;
+  if (wouldWin && trickValue >= 10) score += 18;
+  if (!wouldWin && card.points > 0) score -= card.points * 4;
+  if (wouldWin && game.deck.length <= 8) score += card.points * 2 + card.strength * 0.5;
+  return isBot ? score : -score;
+}
+
+function evaluateGame(game, botIndex) {
+  const opponentIndex = 1 - botIndex;
+  const scoreDiff = game.scores[botIndex] - game.scores[opponentIndex];
+  const botHand = game.hands[botIndex] || [];
+  const oppHand = game.hands[opponentIndex] || [];
+  const handDiff = handPower(botHand, game.trumpSuit) - handPower(oppHand, game.trumpSuit);
+  const tableSwing = (game.table || []).reduce((sum, play) => sum + (play.playerIndex === botIndex ? play.card.points : -play.card.points), 0);
+  const tempo = game.turn === botIndex ? 0.25 : game.turn === opponentIndex ? -0.25 : 0;
+  return scoreDiff * 20 + handDiff + tableSwing * 2 + tempo;
+}
+
+function handPower(hand, trumpSuit) {
+  return hand.reduce((sum, card) => sum + card.points * 2.2 + card.strength * 0.35 + (card.suit === trumpSuit ? 3 + card.strength * 0.4 : 0), 0);
+}
+
+function tieBreakCard(card, game) {
+  if (!card) return -Infinity;
+  return card.points * 10 + card.strength + (card.suit === game.trumpSuit ? 2 : 0);
+}
+
+function memoKey(game, botIndex, depth) {
+  const handKey = game.hands.map((hand) => hand.map((c) => c.id).join(',')).join('|');
+  const tableKey = (game.table || []).map((p) => `${p.playerIndex}:${p.card.id}`).join(',');
+  const deckKey = game.deck.map((c) => c.id).join(',');
+  return [depth, botIndex, game.turn, game.scores.join('-'), handKey, tableKey, deckKey].join(';');
 }
