@@ -200,7 +200,7 @@ function chooseSearchCard(game, botIndex) {
   if (!hand.length) return null;
   const opponentIndex = 1 - botIndex;
   const totalUnplayed = game.deck.length + game.hands[0].length + game.hands[1].length + game.table.length;
-  const searchDepth = totalUnplayed <= 10 ? 8 : totalUnplayed <= 16 ? 4 : 2;
+  const searchDepth = totalUnplayed <= 10 ? 6 : totalUnplayed <= 16 ? 3 : 1;
   const candidates = rankCandidates(game, botIndex, botIndex);
   const memo = new Map();
   const scored = candidates.map((card) => {
@@ -210,8 +210,8 @@ function chooseSearchCard(game, botIndex) {
 
   const best = scored[0];
   const second = scored[1];
-  const closeEnough = second && best.score - second.score <= 80;
-  const useHumanMove = closeEnough && randomIndex(100) < 35;
+  const closeEnough = second && best.score - second.score <= 150;
+  const useHumanMove = closeEnough && randomIndex(100) < 60;
   return (useHumanMove ? second.card : best?.card)?.id || null;
 }
 
