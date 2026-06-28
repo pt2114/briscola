@@ -200,21 +200,19 @@ function chooseSearchCard(game, botIndex) {
   if (!hand.length) return null;
   const opponentIndex = 1 - botIndex;
   const totalUnplayed = game.deck.length + game.hands[0].length + game.hands[1].length + game.table.length;
-  const searchDepth = totalUnplayed <= 10 ? 10 : totalUnplayed <= 16 ? 5 : 2;
+  const searchDepth = totalUnplayed <= 10 ? 8 : totalUnplayed <= 16 ? 4 : 2;
   const candidates = rankCandidates(game, botIndex, botIndex);
-  let best = candidates[0];
-  let bestScore = -Infinity;
   const memo = new Map();
-
-  for (const card of candidates) {
+  const scored = candidates.map((card) => {
     const next = playCard(game, botIndex, card.id);
-    const score = minimax(next, botIndex, opponentIndex, searchDepth - 1, -Infinity, Infinity, memo);
-    if (score > bestScore + 0.0001 || (Math.abs(score - bestScore) < 0.0001 && tieBreakCard(card, game) > tieBreakCard(best, game))) {
-      best = card;
-      bestScore = score;
-    }
-  }
-  return best?.id || null;
+    return { card, score: minimax(next, botIndex, opponentIndex, searchDepth - 1, -Infinity, Infinity, memo) };
+  }).sort((a, b) => b.score - a.score || tieBreakCard(b.card, game) - tieBreakCard(a.card, game));
+
+  const best = scored[0];
+  const second = scored[1];
+  const closeEnough = second && best.score - second.score <= 80;
+  const useHumanMove = closeEnough && randomIndex(100) < 35;
+  return (useHumanMove ? second.card : best?.card)?.id || null;
 }
 
 function minimax(game, botIndex, opponentIndex, depth, alpha, beta, memo) {
