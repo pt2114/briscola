@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
-import { chooseBotCard, collectTrick, newGame, playCard } from './briscola.js';
+import { chooseBotCard, coachFeedback, coachMove, collectTrick, newGame, playCard } from './briscola.js';
 import './styles.css';
 
 const SERVER_URL = import.meta.env.VITE_BRISCOLA_SERVER || window.location.origin;
@@ -285,11 +285,11 @@ function useSpecialStinger() {
   return useMemo(() => ({ stinger, watch, stackedReaction }), [stinger, watch, stackedReaction]);
 }
 
-function Card({ card, onClick, disabled, showPoints, small }) {
+function Card({ card, onClick, disabled, showPoints, small, recommended }) {
   if (!card) return <div className="card ghost" />;
   if (card.hidden) return <div className={`card back ${small ? 'small' : ''}`}><span>PS</span></div>;
   return (
-    <button className={`card ${card.color} ${small ? 'small' : ''}`} onClick={onClick} disabled={disabled}>
+    <button className={`card ${card.color} ${small ? 'small' : ''} ${recommended ? 'recommended' : ''}`} onClick={onClick} disabled={disabled}>
       <span className="corner">{card.rank}<br />{card.suitSymbol}</span>
       <span className="pip">{card.suitSymbol}</span>
       <span className="label">{card.suitLabel}</span>
@@ -326,6 +326,183 @@ function ChatTray({ messages = [], onSend }) {
   </section>;
 }
 
+const VOICE_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+function VoiceChat({ socket }) {
+  const [status, setStatus] = useState('idle');
+  const [incoming, setIncoming] = useState(null);
+  const [muted, setMuted] = useState(false);
+  const [error, setError] = useState('');
+  const localStreamRef = useRef(null);
+  const peerRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const incomingOfferRef = useRef(null);
+  const pendingIceRef = useRef([]);
+
+  const closeCall = useCallback((stopMic = true) => {
+    peerRef.current?.close();
+    peerRef.current = null;
+    pendingIceRef.current = [];
+    incomingOfferRef.current = null;
+    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+    if (stopMic) {
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+      setMuted(false);
+    }
+  }, []);
+
+  const ensureLocalStream = useCallback(async () => {
+    if (localStreamRef.current) return localStreamRef.current;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Voice chat needs a browser with microphone support.');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+    localStreamRef.current = stream;
+    stream.getAudioTracks().forEach((track) => { track.enabled = !muted; });
+    return stream;
+  }, [muted]);
+
+  const flushPendingIce = useCallback(async () => {
+    const peer = peerRef.current;
+    if (!peer?.remoteDescription) return;
+    const candidates = pendingIceRef.current.splice(0);
+    for (const candidate of candidates) {
+      try { await peer.addIceCandidate(candidate); }
+      catch { /* Ignore stale candidates after reconnects. */ }
+    }
+  }, []);
+
+  const ensurePeer = useCallback(async () => {
+    if (peerRef.current) return peerRef.current;
+    const peer = new RTCPeerConnection({ iceServers: VOICE_ICE_SERVERS });
+    peerRef.current = peer;
+    const stream = await ensureLocalStream();
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    peer.onicecandidate = (event) => {
+      if (event.candidate) socket.emit('voiceSignal', { type: 'ice', payload: event.candidate });
+    };
+    peer.ontrack = (event) => {
+      if (remoteAudioRef.current && event.streams[0]) {
+        remoteAudioRef.current.srcObject = event.streams[0];
+        remoteAudioRef.current.play?.().catch(() => {});
+      }
+    };
+    peer.onconnectionstatechange = () => {
+      if (['connected', 'completed'].includes(peer.connectionState)) setStatus('connected');
+      if (['failed', 'disconnected'].includes(peer.connectionState)) setStatus('trouble');
+      if (peer.connectionState === 'closed') setStatus('idle');
+    };
+    return peer;
+  }, [ensureLocalStream, socket]);
+
+  const answerOffer = useCallback(async (offer) => {
+    setError('');
+    setStatus('connecting');
+    const peer = await ensurePeer();
+    await peer.setRemoteDescription(new RTCSessionDescription(offer));
+    await flushPendingIce();
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    socket.emit('voiceSignal', { type: 'answer', payload: answer });
+    setIncoming(null);
+    setStatus('connected');
+  }, [ensurePeer, flushPendingIce, socket]);
+
+  const startCall = useCallback(async () => {
+    try {
+      setError('');
+      setIncoming(null);
+      setStatus('connecting');
+      closeCall(false);
+      const peer = await ensurePeer();
+      const offer = await peer.createOffer({ offerToReceiveAudio: true });
+      await peer.setLocalDescription(offer);
+      socket.emit('voiceSignal', { type: 'offer', payload: offer });
+    } catch (err) {
+      closeCall(true);
+      setStatus('idle');
+      setError(err?.message || 'Could not start voice chat.');
+    }
+  }, [closeCall, ensurePeer, socket]);
+
+  const joinCall = useCallback(async () => {
+    try {
+      if (!incomingOfferRef.current) return startCall();
+      await answerOffer(incomingOfferRef.current);
+    } catch (err) {
+      closeCall(true);
+      setStatus('idle');
+      setError(err?.message || 'Could not join voice chat.');
+    }
+  }, [answerOffer, closeCall, startCall]);
+
+  const endCall = useCallback(() => {
+    socket.emit('voiceSignal', { type: 'hangup' });
+    closeCall(true);
+    setIncoming(null);
+    setStatus('idle');
+    setError('');
+  }, [closeCall, socket]);
+
+  useEffect(() => {
+    const onSignal = async ({ type, payload, sender }) => {
+      try {
+        if (type === 'offer') {
+          incomingOfferRef.current = payload;
+          setIncoming(sender || 'Other player');
+          setStatus((current) => current === 'idle' ? 'ringing' : current);
+        }
+        if (type === 'answer') {
+          const peer = peerRef.current;
+          if (peer && !peer.remoteDescription) {
+            await peer.setRemoteDescription(new RTCSessionDescription(payload));
+            await flushPendingIce();
+            setStatus('connected');
+          }
+        }
+        if (type === 'ice') {
+          const candidate = new RTCIceCandidate(payload);
+          const peer = peerRef.current;
+          if (peer?.remoteDescription) await peer.addIceCandidate(candidate);
+          else pendingIceRef.current.push(candidate);
+        }
+        if (type === 'hangup') {
+          closeCall(true);
+          setIncoming(null);
+          setStatus('idle');
+        }
+      } catch (err) {
+        setError(err?.message || 'Voice chat connection problem.');
+      }
+    };
+    socket.on('voiceSignal', onSignal);
+    return () => {
+      socket.off('voiceSignal', onSignal);
+      closeCall(true);
+    };
+  }, [closeCall, flushPendingIce, socket]);
+
+  function toggleMute() {
+    const nextMuted = !muted;
+    setMuted(nextMuted);
+    localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = !nextMuted; });
+  }
+
+  const label = status === 'connected' ? 'Voice connected' : status === 'connecting' ? 'Connecting…' : status === 'trouble' ? 'Voice trouble' : incoming ? `${incoming} wants to talk` : 'Voice chat';
+
+  return <section className={`voice-chat voice-${status}`}>
+    <audio ref={remoteAudioRef} autoPlay playsInline />
+    <span className="voice-status"><i />{label}</span>
+    {incoming && status !== 'connected' && <button onClick={joinCall}>Join</button>}
+    {!incoming && status !== 'connected' && <button onClick={startCall}>Start talking</button>}
+    {status === 'connected' && <button onClick={toggleMute}>{muted ? 'Unmute' : 'Mute'}</button>}
+    {status !== 'idle' && <button className="voice-end" onClick={endCall}>Hang up</button>}
+    {error && <small>{error}</small>}
+  </section>;
+}
+
 function ScoreBoard({ game, record }) {
   const recordText = record ? `${game.players[0]} ${record.wins?.[game.players[0]] || 0}-${record.losses?.[game.players[0]] || 0} · ${game.players[1]} ${record.wins?.[game.players[1]] || 0}-${record.losses?.[game.players[1]] || 0}${record.ties ? ` · ${record.ties} ties` : ''}` : '';
   return <aside className="scoreboard bliss-hud">
@@ -337,17 +514,25 @@ function ScoreBoard({ game, record }) {
   </aside>;
 }
 
-function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, myIndex = 0, onNewGame, chatMessages = [], onChatSend }) {
+function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, educationMode = false, myIndex = 0, onNewGame, chatMessages = [], onChatSend }) {
   const specialStinger = useSpecialStinger();
   const localRecord = useLocalHeadToHead(game);
   const record = mode === 'multi' ? (game.record || localRecord) : localRecord;
   const isStingerOpen = Boolean(specialStinger.stinger);
   const isMyTurn = game.turn === myIndex && !game.winner && !game.pendingTrick;
   const canPlay = (playerIndex) => !isStingerOpen && (mode !== 'multi' ? playerIndex === 0 && isMyTurn : playerIndex === myIndex && isMyTurn);
+  const [coachNote, setCoachNote] = useState(null);
+  const currentCoach = useMemo(() => {
+    if (!educationMode || mode !== 'single' || !isMyTurn) return null;
+    return coachMove(game, 0);
+  }, [educationMode, game, isMyTurn, mode]);
 
   function play(cardId) {
     if (mode === 'multi') socket.emit('play', { cardId });
-    else setGame((g) => playCard(g, 0, cardId));
+    else {
+      if (educationMode) setCoachNote(coachFeedback(game, 0, cardId));
+      setGame((g) => playCard(g, 0, cardId));
+    }
   }
 
   function stackedReaction() {
@@ -367,7 +552,8 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, myIn
   useEffect(() => {
     if (mode !== 'single' || isStingerOpen || game.winner || game.turn !== 1 || game.pendingTrick) return;
     const t = setTimeout(() => {
-      setGame((g) => playCard(g, 1, chooseBotCard(g, 1, 'extra-hard')));
+      setCoachNote(null);
+      setGame((g) => playCard(g, 1, chooseBotCard(g, 1, 'expert-75')));
     }, 650);
     return () => clearTimeout(t);
   }, [game, mode, setGame, soundEnabled, isStingerOpen]);
@@ -404,6 +590,11 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, myIn
       {onNewGame && <button onClick={onNewGame}>New game</button>}
     </div>
     {mode === 'multi' && <ChatTray messages={chatMessages} onSend={onChatSend} />}
+    {mode === 'multi' && socket && <VoiceChat socket={socket} />}
+    {educationMode && mode === 'single' && (currentCoach || coachNote) && <aside className={`coach-panel ${coachNote?.tone || 'tip'}`}>
+      <strong>{coachNote?.title || currentCoach.label}</strong>
+      <span>{coachNote?.text || currentCoach.reason}</span>
+    </aside>}
     {specialStinger.stinger?.flavor === 'stacked' && <div className="gold-chaos" aria-hidden="true">{Array.from({ length: 48 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, animationDelay: `${(i % 16) * 0.035}s`, '--drift': `${((i * 53) % 180) - 90}px`, '--spin': `${(i * 47) % 720}deg`, '--scale': `${0.7 + ((i * 11) % 9) / 10}` }} />)}</div>}
     {specialStinger.stinger && <div className={`ace-stinger ${specialStinger.stinger.flavor} ${specialStinger.stinger.image ? 'photo-stinger' : ''}`}>{specialStinger.stinger.image && <img src={specialStinger.stinger.image} alt={specialStinger.stinger.title} />}<b>{specialStinger.stinger.title}</b>{specialStinger.stinger.subtitle && <span>{specialStinger.stinger.subtitle}</span>}</div>}
     <section className="felt bliss-table">
@@ -435,7 +626,7 @@ function GameTable({ game, setGame, mode, socket, showPoints, soundEnabled, myIn
 
       <div className="player bottom">
         <PlayerBadge name={game.players[bottomIndex]} turn={game.turn === bottomIndex} />
-        <div className="hand">{game.hands[bottomIndex].map((c) => <Card key={c.id} card={c} onClick={() => play(c.id)} disabled={!canPlay(bottomIndex)} showPoints={showPoints} />)}</div>
+        <div className="hand">{game.hands[bottomIndex].map((c) => <Card key={c.id} card={c} onClick={() => play(c.id)} disabled={!canPlay(bottomIndex)} showPoints={showPoints} recommended={currentCoach?.cardId === c.id} />)}</div>
       </div>
     </section>
   </main>;
@@ -484,14 +675,18 @@ function App() {
   const [mode, setMode] = useState('lobby');
   const [showPoints, setShowPoints] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [educationMode, setEducationMode] = useState(() => localStorage.getItem('briscolaEducationMode') === 'true');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [singleGame, setSingleGame] = useState(() => newGame(['Pavel', 'Computer']));
   const [login, setLogin] = useState({ name: 'Pavel', room: 'MILAN' });
-  return <>
+  useEffect(() => {
+    localStorage.setItem('briscolaEducationMode', String(educationMode));
+  }, [educationMode]);
+  return <> 
     <div className="app-header"><button onClick={() => setMode('lobby')}>‹ Menu</button><div><strong>Pavel & Sid’s</strong><span>Briscola</span></div><button className="settings-button" onClick={() => setSettingsOpen(true)}>⚙︎</button></div>
-    {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-grabber" /><h2>Settings</h2><label className="setting-row"><span>Show point values</span><input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} /></label><label className="setting-row"><span>Sound effects</span><input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} /></label><button className="done-button" onClick={() => setSettingsOpen(false)}>Done</button></section></div>}
+    {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-grabber" /><h2>Settings</h2><label className="setting-row"><span>Show point values</span><input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} /></label><label className="setting-row"><span>Sound effects</span><input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} /></label><label className="setting-row"><span><b>Education Mode</b><small>Coach tips while you play the computer</small></span><input type="checkbox" checked={educationMode} onChange={(e) => setEducationMode(e.target.checked)} /></label><button className="done-button" onClick={() => setSettingsOpen(false)}>Done</button></section></div>}
     {mode === 'lobby' && <Lobby onSingle={(player) => { setSingleGame(player === 'sid' ? newGame(['Sid', 'Pavel Computer']) : newGame(['Pavel', 'Sid Computer'])); setMode('single'); }} onMulti={(name, room) => { setLogin({ name, room }); setMode('multi'); }} />}
-    {mode === 'single' && <GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} onNewGame={() => setSingleGame((game) => newGame(game.players))} />}
+    {mode === 'single' && <GameTable game={singleGame} setGame={setSingleGame} mode="single" showPoints={showPoints} soundEnabled={soundEnabled} educationMode={educationMode} onNewGame={() => setSingleGame((game) => newGame(game.players))} />}
     {mode === 'multi' && <Multiplayer name={login.name} room={login.room} showPoints={showPoints} soundEnabled={soundEnabled} />}
   </>;
 }

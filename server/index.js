@@ -81,6 +81,13 @@ io.on('connection', (socket) => {
     }
   });
   socket.on('chatMessage', ({ text }) => { const room = socket.data.room; const r = rooms.get(room); if (!r) return; const player = r.players.find(p => p.socketId === socket.id); const clean = String(text || '').trim().slice(0, 180); if (!clean) return; r.chat = [...(r.chat || []), { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, sender: player?.name || 'Player', text: clean, ts: Date.now() }].slice(-30); emitRoom(room); });
+  socket.on('voiceSignal', ({ type, payload }) => {
+    const room = socket.data.room;
+    const r = rooms.get(room);
+    if (!r) return;
+    const player = r.players.find(p => p.socketId === socket.id);
+    socket.to(room).emit('voiceSignal', { type, payload, sender: player?.name || 'Player', ts: Date.now() });
+  });
   socket.on('reaction', ({ type }) => { const room = socket.data.room; const r = rooms.get(room); if (!r || type !== 'stacked') return; const player = r.players.find(p => p.socketId === socket.id); io.to(room).emit('reaction', { type: 'stacked', sender: player?.name || 'Player', ts: Date.now() }); });
   socket.on('newGame', () => { const room = socket.data.room; const r = rooms.get(room); if (r?.players.length === 2) { r.game = createRoomGame(r.players.map(p => p.name)); emitRoom(room); } });
   socket.on('disconnect', () => { if (socket.data.room) emitRoom(socket.data.room); });

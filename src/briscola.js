@@ -161,8 +161,8 @@ export function chooseBotCard(game, botIndex = 1, difficulty = 'hard') {
 
   if (difficulty === 'easy') return randomCard.id;
 
-  if (difficulty === 'extra-hard') {
-    const searched = chooseSearchCard(game, botIndex);
+  if (difficulty === 'extra-hard' || difficulty === 'expert-75') {
+    const searched = chooseSearchCard(game, botIndex, difficulty);
     if (searched) return searched;
   }
 
@@ -195,12 +195,84 @@ export function chooseBotCard(game, botIndex = 1, difficulty = 'hard') {
   return discardPool.sort((a, b) => a.points - b.points || a.strength - b.strength)[0].id;
 }
 
-function chooseSearchCard(game, botIndex) {
+export function coachMove(game, playerIndex = 0) {
+  const hand = game.hands[playerIndex] || [];
+  if (game.winner || game.pendingTrick || game.turn !== playerIndex || !hand.length) return null;
+  const candidates = rankCandidates(game, playerIndex, playerIndex);
+  const memo = new Map();
+  const depth = game.deck.length <= 8 ? 6 : game.deck.length <= 16 ? 4 : 2;
+  const scored = candidates.map((card) => {
+    const next = playCard(game, playerIndex, card.id);
+    return { card, score: minimax(next, playerIndex, 1 - playerIndex, depth - 1, -Infinity, Infinity, memo) };
+  }).sort((a, b) => b.score - a.score || tieBreakCard(b.card, game) - tieBreakCard(a.card, game));
+
+  const best = scored[0];
+  if (!best) return null;
+  return {
+    cardId: best.card.id,
+    label: coachLabel(best.card, game, playerIndex),
+    reason: coachReason(best.card, game, playerIndex),
+    alternatives: scored.slice(1, 3).map(({ card }) => card.id),
+  };
+}
+
+export function coachFeedback(gameBeforeMove, playerIndex, playedCardId) {
+  const advice = coachMove(gameBeforeMove, playerIndex);
+  if (!advice) return null;
+  const played = (gameBeforeMove.hands[playerIndex] || []).find((card) => card.id === playedCardId);
+  const best = (gameBeforeMove.hands[playerIndex] || []).find((card) => card.id === advice.cardId);
+  if (!played || !best) return null;
+  if (played.id === best.id) {
+    return { tone: 'good', title: 'Good Briscola move', text: advice.reason };
+  }
+  return {
+    tone: 'coach',
+    title: `Consider ${best.rank} ${best.suitSymbol}`,
+    text: `I’d lean ${best.rank} ${best.suitSymbol} here. ${advice.reason}`,
+  };
+}
+
+function coachLabel(card, game, playerIndex) {
+  const table = game.table || [];
+  if (!table.length) {
+    if (card.suit === game.trumpSuit && game.deck.length > 8) return 'Save trump if you can';
+    if (card.points === 0) return 'Safe lead';
+    return 'Pressure lead';
+  }
+  const wouldWin = trickWinner([table[0], { playerIndex, card }], game.trumpSuit) === playerIndex;
+  const trickValue = table[0].card.points + card.points;
+  if (wouldWin && trickValue >= 10) return 'Take the points';
+  if (wouldWin) return 'Cheap winner';
+  if (card.points > 0) return 'Risky discard';
+  return 'Safe discard';
+}
+
+function coachReason(card, game, playerIndex) {
+  const table = game.table || [];
+  const late = game.deck.length <= 8;
+  if (!table.length) {
+    if (card.points === 0 && card.suit !== game.trumpSuit) return 'Lead low and non-trump so you keep your scoring cards and briscola for richer tricks.';
+    if (late) return 'Late game is about converting strength into points before the hand runs out.';
+    if (card.suit === game.trumpSuit) return 'It works, but trump is expensive early; only spend it when the trick is worth it.';
+    return 'This balances pressure with not donating your best cards too early.';
+  }
+  const opponentCard = table[0].card;
+  const wouldWin = trickWinner([table[0], { playerIndex, card }], game.trumpSuit) === playerIndex;
+  const trickValue = opponentCard.points + card.points;
+  if (wouldWin && trickValue >= 10) return `The trick is worth ${trickValue} points, so winning it is worth spending a card.`;
+  if (wouldWin) return 'Win with the cheapest card that does the job; save higher cards for bigger swings.';
+  if (card.points === 0) return 'You are likely losing this trick, so dump a zero and protect your points.';
+  return 'Try not to feed points into a trick you are not taking unless you are setting up a bigger endgame.';
+}
+
+function chooseSearchCard(game, botIndex, difficulty = 'extra-hard') {
   const hand = game.hands[botIndex] || [];
   if (!hand.length) return null;
   const opponentIndex = 1 - botIndex;
   const totalUnplayed = game.deck.length + game.hands[0].length + game.hands[1].length + game.table.length;
-  const searchDepth = totalUnplayed <= 10 ? 6 : totalUnplayed <= 16 ? 3 : 1;
+  const searchDepth = difficulty === 'expert-75'
+    ? (totalUnplayed <= 12 ? 8 : totalUnplayed <= 20 ? 4 : 2)
+    : (totalUnplayed <= 10 ? 6 : totalUnplayed <= 16 ? 3 : 1);
   const candidates = rankCandidates(game, botIndex, botIndex);
   const memo = new Map();
   const scored = candidates.map((card) => {
@@ -210,6 +282,11 @@ function chooseSearchCard(game, botIndex) {
 
   const best = scored[0];
   const second = scored[1];
+  if (difficulty === 'expert-75') {
+    const closeEnough = second && best.score - second.score <= 120;
+    const useSecondBest = closeEnough && randomIndex(100) < 20;
+    return (useSecondBest ? second.card : best?.card)?.id || null;
+  }
   const closeEnough = second && best.score - second.score <= 150;
   const useHumanMove = closeEnough && randomIndex(100) < 60;
   return (useHumanMove ? second.card : best?.card)?.id || null;
