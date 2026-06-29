@@ -211,7 +211,7 @@ export function coachMove(game, playerIndex = 0) {
   return {
     cardId: best.card.id,
     label: coachLabel(best.card, game, playerIndex),
-    reason: coachReason(best.card, game, playerIndex),
+    reason: coachReason(best.card, game, playerIndex, scored),
     alternatives: scored.slice(1, 3).map(({ card }) => card.id),
   };
 }
@@ -223,46 +223,87 @@ export function coachFeedback(gameBeforeMove, playerIndex, playedCardId) {
   const best = (gameBeforeMove.hands[playerIndex] || []).find((card) => card.id === advice.cardId);
   if (!played || !best) return null;
   if (played.id === best.id) {
-    return { tone: 'good', title: 'Good Briscola move', text: advice.reason };
+    return { tone: 'good', title: 'Good human move', text: advice.reason };
   }
   return {
     tone: 'coach',
-    title: `Consider ${best.rank} ${best.suitSymbol}`,
-    text: `I’d lean ${best.rank} ${best.suitSymbol} here. ${advice.reason}`,
+    title: `Mentor note: ${cardName(best)} over ${cardName(played)}`,
+    text: `${compareCardsForCoach(best, played, gameBeforeMove, playerIndex)} ${advice.reason}`,
   };
 }
 
 function coachLabel(card, game, playerIndex) {
   const table = game.table || [];
+  const late = game.deck.length <= 8;
   if (!table.length) {
-    if (card.suit === game.trumpSuit && game.deck.length > 8) return 'Save trump if you can';
-    if (card.points === 0) return 'Safe lead';
-    return 'Pressure lead';
+    if (late && card.points > 0) return 'Convert endgame value';
+    if (card.suit === game.trumpSuit && game.deck.length > 8) return 'Trump discipline';
+    if (card.points === 0) return 'Probe with garbage';
+    return 'Controlled pressure';
   }
   const wouldWin = trickWinner([table[0], { playerIndex, card }], game.trumpSuit) === playerIndex;
   const trickValue = table[0].card.points + card.points;
-  if (wouldWin && trickValue >= 10) return 'Take the points';
-  if (wouldWin) return 'Cheap winner';
-  if (card.points > 0) return 'Risky discard';
-  return 'Safe discard';
+  if (wouldWin && trickValue >= 14) return 'Cash the swing';
+  if (wouldWin && trickValue >= 6) return 'Take with control';
+  if (wouldWin) return 'Win cheap, stay loaded';
+  if (card.points > 0) return 'Avoid leaking points';
+  return 'Lose on purpose';
 }
 
-function coachReason(card, game, playerIndex) {
+function coachReason(card, game, playerIndex, scored = []) {
   const table = game.table || [];
   const late = game.deck.length <= 8;
+  const opponentIndex = 1 - playerIndex;
+  const scoreDiff = game.scores[playerIndex] - game.scores[opponentIndex];
+  const stage = game.deck.length > 18 ? 'early' : game.deck.length > 8 ? 'middle' : 'endgame';
+  const hand = game.hands[playerIndex] || [];
+  const trumpCount = hand.filter((c) => c.suit === game.trumpSuit).length;
+  const highPointCards = hand.filter((c) => c.points >= 10).length;
+  const second = scored[1];
+  const edge = second ? Math.round(scored[0].score - second.score) : null;
+  const edgeText = edge !== null && edge < 80 ? 'This is close — a strong player could argue the second-best card too.' : 'This is the cleanest line from the position.';
+
   if (!table.length) {
-    if (card.points === 0 && card.suit !== game.trumpSuit) return 'Lead low and non-trump so you keep your scoring cards and briscola for richer tricks.';
-    if (late) return 'Late game is about converting strength into points before the hand runs out.';
-    if (card.suit === game.trumpSuit) return 'It works, but trump is expensive early; only spend it when the trick is worth it.';
-    return 'This balances pressure with not donating your best cards too early.';
+    if (late) return `${stageLine(stage, scoreDiff)} Lead ${cardName(card)} because the deck is almost gone: now you stop hiding strength and start converting cards into points. ${edgeText}`;
+    if (card.points === 0 && card.suit !== game.trumpSuit) return `${stageLine(stage, scoreDiff)} Lead low non-trump with ${cardName(card)}. You are asking the computer to spend something first while you protect ${trumpCount ? 'your trump' : 'your better suits'} and ${highPointCards ? 'your A/3 scoring cards' : 'your future winners'}. ${edgeText}`;
+    if (card.suit === game.trumpSuit) return `${stageLine(stage, scoreDiff)} ${cardName(card)} is trump, so treat it like cash. I only like leading trump when your hand is forcing, the deck is late, or you need tempo badly; otherwise make them reveal value first. ${edgeText}`;
+    return `${stageLine(stage, scoreDiff)} Lead ${cardName(card)} as controlled pressure: it can win if they duck, but it does not donate your premium points if they answer. ${edgeText}`;
   }
   const opponentCard = table[0].card;
   const wouldWin = trickWinner([table[0], { playerIndex, card }], game.trumpSuit) === playerIndex;
   const trickValue = opponentCard.points + card.points;
-  if (wouldWin && trickValue >= 10) return `The trick is worth ${trickValue} points, so winning it is worth spending a card.`;
-  if (wouldWin) return 'Win with the cheapest card that does the job; save higher cards for bigger swings.';
-  if (card.points === 0) return 'You are likely losing this trick, so dump a zero and protect your points.';
-  return 'Try not to feed points into a trick you are not taking unless you are setting up a bigger endgame.';
+  if (wouldWin && trickValue >= 14) return `${stageLine(stage, scoreDiff)} They exposed ${cardName(opponentCard)}, making this a ${trickValue}-point swing. Take it with ${cardName(card)}; great players do not get cute when A/3-level value is sitting on the table.`;
+  if (wouldWin && trickValue >= 6) return `${stageLine(stage, scoreDiff)} This trick is worth ${trickValue}, enough to take, but not enough to overpay. ${cardName(card)} wins while keeping your bigger bullets for later.`;
+  if (wouldWin) return `${stageLine(stage, scoreDiff)} Win cheaply with ${cardName(card)}. The point total is small, so the real value is keeping lead/tempo without burning a premium card.`;
+  if (card.points === 0) return `${stageLine(stage, scoreDiff)} You are probably not taking this trick, so lose it cleanly with ${cardName(card)}. Giving zero points away while preserving winners is very human-good Briscola.`;
+  return `${stageLine(stage, scoreDiff)} I dislike feeding ${card.points} point${card.points === 1 ? '' : 's'} into a trick you are not winning. Only do that if you are deliberately setting up the last hand; otherwise protect points first.`;
+}
+
+function cardName(card) {
+  if (!card) return 'that card';
+  return `${card.rank}${card.suitSymbol}`;
+}
+
+function stageLine(stage, scoreDiff) {
+  const score = scoreDiff > 8 ? `You’re ahead by ${scoreDiff}, so avoid unnecessary volatility.`
+    : scoreDiff < -8 ? `You’re down by ${Math.abs(scoreDiff)}, so you need value without panic.`
+      : 'The score is close, so card economy matters.';
+  return `${stage[0].toUpperCase()}${stage.slice(1)} hand. ${score}`;
+}
+
+function compareCardsForCoach(best, played, game, playerIndex) {
+  const table = game.table || [];
+  if (!table.length) {
+    if (played.points > best.points) return `${cardName(played)} spends more point-value than needed from the lead.`;
+    if (played.suit === game.trumpSuit && best.suit !== game.trumpSuit) return `${cardName(played)} spends trump before the trick has a price tag.`;
+    return `${cardName(best)} keeps your hand shape cleaner for the next exchange.`;
+  }
+  const bestWins = trickWinner([table[0], { playerIndex, card: best }], game.trumpSuit) === playerIndex;
+  const playedWins = trickWinner([table[0], { playerIndex, card: played }], game.trumpSuit) === playerIndex;
+  if (bestWins && !playedWins) return `${cardName(played)} lets them keep a trick you could take.`;
+  if (!bestWins && played.points > best.points) return `${cardName(played)} leaks points into a trick you are probably losing.`;
+  if (bestWins && playedWins && played.points + played.strength > best.points + best.strength) return `${cardName(played)} also wins, but it overpays.`;
+  return `${cardName(best)} gives you a better next-trick position.`;
 }
 
 function chooseSearchCard(game, botIndex, difficulty = 'extra-hard') {
