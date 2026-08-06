@@ -5,18 +5,23 @@
     "dev:full": "concurrently -k \"npm run server\" \"npm run dev\"",
     "start": "node server/index.js",
     "build": "vite build",
+    "test": "npm run test:logic && npm run test:ui",
+    "test:logic": "node tests/game-simulation.mjs",
+    "test:ui": "mkdir -p test-results && node tests/ui-smoke.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "concurrently": "latest",
+    "express": "latest",
     "react": "latest",
     "react-dom": "latest",
     "socket.io": "latest",
     "socket.io-client": "latest",
-    "express": "latest",
-    "concurrently": "latest"
+    "vite": "latest"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  },
   "type": "module"
 }

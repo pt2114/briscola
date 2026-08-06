@@ -33,7 +33,7 @@ function beats(challenger, current, leadSuit, trumpSuit) { if (!current) return 
 function trickWinner(table, trumpSuit) { const leadSuit = table[0].card.suit; let winning = table[0]; for (const play of table.slice(1)) if (beats(play.card, winning.card, leadSuit, trumpSuit)) winning = play; return winning.playerIndex; }
 function trickPoints(table) { return table.reduce((sum, play) => sum + play.card.points, 0); }
 function drawFor(game, winnerIndex) { const loser = 1 - winnerIndex; if (game.deck.length) game.hands[winnerIndex].push(game.deck.shift()); if (game.deck.length) game.hands[loser].push(game.deck.shift()); }
-function newGame(players, startingPlayerIndex = randomInt(players.length)) { const deck = shuffle(createDeck()); const trumpCard = deck[deck.length - 1]; const hands = [deck.splice(0, 3), deck.splice(0, 3)]; return { id: `${Date.now()}-${randomUUID()}`, players, deck, trumpCard, trumpSuit: trumpCard.suit, hands, table: [], scores: [0, 0], lead: startingPlayerIndex, turn: startingPlayerIndex, startingPlayerIndex, lastTrick: null, winner: null, log: [`${players[startingPlayerIndex]} starts this game.`, `La briscola is ${trumpCard.suitSymbol} ${trumpCard.suitLabel}.`] }; }
+function newGame(players, startingPlayerIndex = randomInt(players.length)) { const deck = shuffle(createDeck()); const trumpCard = deck[deck.length - 1]; const hands = [[], []]; for (let round = 0; round < 3; round += 1) { hands[0].push(deck.shift()); hands[1].push(deck.shift()); } return { id: `${Date.now()}-${randomUUID()}`, players, deck, trumpCard, trumpSuit: trumpCard.suit, hands, table: [], scores: [0, 0], lead: startingPlayerIndex, turn: startingPlayerIndex, startingPlayerIndex, lastTrick: null, winner: null, log: [`${players[startingPlayerIndex]} starts this game.`, `La briscola is ${trumpCard.suitSymbol} ${trumpCard.suitLabel}.`] }; }
 function playCard(game, playerIndex, cardId) { if (game.winner || game.pendingTrick || game.turn !== playerIndex) return game; const idx = game.hands[playerIndex].findIndex(c => c.id === cardId); if (idx < 0) return game; const card = game.hands[playerIndex][idx]; game.hands[playerIndex].splice(idx, 1); game.table.push({ playerIndex, card }); if (game.table.length === 1) { game.turn = 1 - playerIndex; return game; } const wonBy = trickWinner(game.table, game.trumpSuit); const pts = trickPoints(game.table); game.pendingTrick = { wonBy, points: pts, cards: game.table }; game.turn = null; return game; }
 function collectTrick(game) { if (!game?.pendingTrick) return game; const { wonBy, points } = game.pendingTrick; game.scores[wonBy] += points; game.lastTrick = game.pendingTrick; game.log = [`${game.players[wonBy]} takes ${points} point${points === 1 ? '' : 's'}.`, ...(game.log || [])].slice(0, 5); game.table = []; game.pendingTrick = null; game.lead = wonBy; game.turn = wonBy; drawFor(game, wonBy); if (!game.hands[0].length && !game.hands[1].length && !game.deck.length) { if (game.scores[0] === game.scores[1]) { game.winner = 'Tie game — 60 to 60.'; game.result = { tie: true, scores: [...game.scores] }; } else { const w = game.scores[0] > game.scores[1] ? 0 : 1; game.winner = `${game.players[w]} wins ${game.scores[w]}-${game.scores[1 - w]}.`; game.result = { winnerIndex: w, loserIndex: 1 - w, scores: [...game.scores] }; } } return game; }
 function recordKey(players) { return players.map((p) => String(p || '').trim().toLowerCase()).sort().join('::'); }
@@ -45,7 +45,10 @@ function nextStartingPlayerIndex(players) {
   const key = recordKey(players);
   const record = records.get(key) || emptyRecord(players);
   record.players = [...players];
-  const startingPlayerIndex = randomInt(players.length);
+  const previousIndex = record.lastStartingPlayer
+    ? players.findIndex((player) => player === record.lastStartingPlayer)
+    : -1;
+  const startingPlayerIndex = previousIndex >= 0 ? 1 - previousIndex : randomInt(players.length);
   record.lastStartingPlayer = players[startingPlayerIndex];
   records.set(key, record);
   saveRecords();

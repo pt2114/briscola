@@ -51,11 +51,16 @@ function randomIndex(maxExclusive) {
   return Math.floor(Math.random() * maxExclusive);
 }
 
-export function newGame(players = ['Pavel', 'Computer']) {
+export function newGame(players = ['Pavel', 'Computer'], startingPlayerIndex = randomIndex(players.length)) {
   const deck = shuffle(createDeck());
   const trumpCard = deck[deck.length - 1];
-  const hands = [deck.splice(0, 3), deck.splice(0, 3)];
-  const startingPlayerIndex = randomIndex(players.length);
+  const hands = [[], []];
+  // Deal one card at a time, just as at a physical table. The shuffled deck is
+  // already uniform, but alternating the deal makes that fairness visible.
+  for (let round = 0; round < 3; round += 1) {
+    hands[0].push(deck.shift());
+    hands[1].push(deck.shift());
+  }
   return {
     id: `${Date.now()}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`,
     players,
@@ -162,8 +167,8 @@ export function chooseBotCard(game, botIndex = 1, difficulty = 'hard') {
   if (difficulty === 'easy') return randomCard.id;
 
   if (difficulty === 'extra-hard' || difficulty === 'expert-75') {
-    const searched = chooseSearchCard(game, botIndex, difficulty);
-    if (searched) return searched;
+    const fairChoice = chooseFairExpertCard(game, botIndex, difficulty);
+    if (fairChoice) return fairChoice;
   }
 
   if (table.length === 0) {
@@ -195,16 +200,44 @@ export function chooseBotCard(game, botIndex = 1, difficulty = 'hard') {
   return discardPool.sort((a, b) => a.points - b.points || a.strength - b.strength)[0].id;
 }
 
+// Strong play without peeking at the opponent's hand or the future stock.
+// Briscola is an imperfect-information game, so a fair bot may use only its
+// own cards, the public table, trump, score and number of cards remaining.
+function chooseFairExpertCard(game, botIndex, difficulty) {
+  const ranked = fairExpertRanking(game, botIndex);
+
+  // Expert-75 deliberately takes a reasonable second choice sometimes. This
+  // keeps the computer strong and human without granting hidden information.
+  if (difficulty === 'expert-75' && ranked[1] && randomIndex(100) >= 75) return ranked[1].id;
+  return ranked[0]?.id || null;
+}
+
+function fairExpertRanking(game, playerIndex) {
+  const hand = game.hands[playerIndex] || [];
+  if (!hand.length) return [];
+  const late = game.deck.length <= 8;
+  const byCost = (a, b) => a.points - b.points || a.strength - b.strength;
+  if (!game.table.length) {
+    return [...hand].sort((a, b) => {
+      const cost = (card) => card.points * 12 + card.strength + (!late && card.suit === game.trumpSuit ? 28 : 0);
+      return cost(a) - cost(b);
+    });
+  }
+  const lead = game.table[0].card;
+  const winners = hand.filter((card) => trickWinner([
+    game.table[0],
+    { playerIndex, card },
+  ], game.trumpSuit) === playerIndex).sort(byCost);
+  const losers = hand.filter((card) => !winners.includes(card)).sort(byCost);
+  return lead.points >= 2 || late ? [...winners, ...losers] : [...losers, ...winners];
+}
+
 export function coachMove(game, playerIndex = 0) {
   const hand = game.hands[playerIndex] || [];
   if (game.winner || game.pendingTrick || game.turn !== playerIndex || !hand.length) return null;
-  const candidates = rankCandidates(game, playerIndex, playerIndex);
-  const memo = new Map();
-  const depth = game.deck.length <= 8 ? 6 : game.deck.length <= 16 ? 4 : 2;
-  const scored = candidates.map((card) => {
-    const next = playCard(game, playerIndex, card.id);
-    return { card, score: minimax(next, playerIndex, 1 - playerIndex, depth - 1, -Infinity, Infinity, memo) };
-  }).sort((a, b) => b.score - a.score || tieBreakCard(b.card, game) - tieBreakCard(a.card, game));
+  // Coaching follows the same public-information rules as the opponent AI.
+  const candidates = fairExpertRanking(game, playerIndex);
+  const scored = candidates.map((card, index) => ({ card, score: (candidates.length - index) * 200 }));
 
   const best = scored[0];
   if (!best) return null;
